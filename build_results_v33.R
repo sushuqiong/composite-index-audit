@@ -610,15 +610,15 @@ write.csv(armF, file.path(OUT, "v33_armF_glm7_metab_base.csv"),
 # ------------------ GLM7 dual-registration table --------------------------
 pick <- function(df, index = "GLM7") df[df$index == index, , drop = FALSE]
 dual <- rbind(
-  cbind(outcome = "dx_diab", record = "GLM7-a", pick(armA)),
+  cbind(outcome = "dx_diab", record = "GLM7", pick(armA)),
   cbind(outcome = "dx_diab", record = "GLM7-b", pick(armF_diab)),
-  cbind(outcome = "dx_gall", record = "GLM7-a", pick(armG)),
+  cbind(outcome = "dx_gall", record = "GLM7", pick(armG)),
   cbind(outcome = "dx_gall", record = "GLM7-b", pick(armF_gall)))
 dual$registered_component_model <- c(
   rep("sex + log_age + log_bmi", 2), rep("sex + log_age + log_bmi", 2))
 dual$registered_component_model[dual$record == "GLM7-b"] <-
   "sex + log_age + log_bmi + metab"
-dual$audit_class_for_record <- ifelse(dual$record == "GLM7-a",
+dual$audit_class_for_record <- ifelse(dual$record == "GLM7",
                                       "rank_adding_exact",
                                       "rank_preserving_exact")
 RESULTS$glm7_dual_registration <- dual
@@ -819,7 +819,7 @@ write.csv(families, file.path(OUT, "v33_multiplicity_families.csv"),
 ref <- reference_audit_classes()
 flow_rows <- lapply(names(ref), function(id) {
   role <- switch(id,
-    GLM7 = "dual-registered: record GLM7-a evaluated in Arms A/B/F; record GLM7-b in Arm F",
+    GLM7 = "dual-registered: record GLM7 evaluated in Arms A/B/F; record GLM7-b in Arm F",
     HOMA_IR_log = "scale-sensitivity registration; not one of the 24 primary contrasts",
     "primary candidate; evaluated in Arms A and B")
   evaluated <- switch(id,
@@ -865,9 +865,9 @@ stopifnot(
   abs(gF$L_delta_auc) < 1e-8, abs(gF$L_lo) < 1e-12, abs(gF$L_hi) < 1e-12,
   identical(gFg$status, "structural_zero_verified"),
   abs(gFg$L_delta_auc) < 1e-8,
-  identical(dual$L_delta_auc[dual$record == "GLM7-a" &
+  identical(dual$L_delta_auc[dual$record == "GLM7" &
             dual$outcome == "dx_diab"], gA$L_delta_auc),
-  identical(dual$L_lo[dual$record == "GLM7-a" & dual$outcome == "dx_gall"],
+  identical(dual$L_lo[dual$record == "GLM7" & dual$outcome == "dx_gall"],
             gG$L_lo)
 )
 cat("\nASSERTIONS PASSED: one contrast, one number, one interval per table;\n")

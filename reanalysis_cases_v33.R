@@ -148,13 +148,13 @@ for (period in c("P", "L")) {
     cov.wt(cbind(x[ok], y[ok]), wt = w[ok], cor = TRUE)$cor[1, 2]
   }
   raw_note <- if (length(raw$failure_states)) raw$failure_states[1] else ""
-  emit("case3_boundary", period, "TyG_with_RAW_components", raw$classification,
+  emit("case4_boundary", period, "TyG_with_RAW_components", raw$classification,
        raw_note)
-  emit("case3_boundary", period, "TyG_with_LOG_components", logged$classification,
+  emit("case4_boundary", period, "TyG_with_LOG_components", logged$classification,
        "same numbers, certified once the registered transformation is used")
-  emit("case3_boundary", period, "weighted_cor_TyG_TG", signif(wcor(f3$TyG, f3$tg_mg_dL, f3$weight), 4),
+  emit("case4_boundary", period, "weighted_cor_TyG_TG", signif(wcor(f3$TyG, f3$tg_mg_dL, f3$weight), 4),
        "high empirical correlation is not an identity")
-  emit("case3_boundary", period, "weighted_cor_TyG_glucose", signif(wcor(f3$TyG, f3$glucose_mg_dL, f3$weight), 4))
+  emit("case4_boundary", period, "weighted_cor_TyG_glucose", signif(wcor(f3$TyG, f3$glucose_mg_dL, f3$weight), 4))
 
   # ---------------- Case 4: CVAI bundled 1 df vs unrestricted 5 df --------
   # LAP carries two interactions, so its contrast is 1 df vs 2 df.  CVAI
@@ -177,14 +177,14 @@ for (period in c("P", "L")) {
                 design = des4, family = quasibinomial())
   w_1 <- wald1(c1m, ~CVAI)
   w_5 <- wald1(c5m, ~ age_f + bmi_f + w_f + ltg_f + hdl_f)
-  emit("case4_CVAI", period, "audit_classification", a4$classification,
+  emit("case3_CVAI", period, "audit_classification", a4$classification,
        "CVAI entered next to its six components")
-  emit("case4_CVAI", period, "n", nrow(f4))
-  emit("case4_CVAI", period, "interaction_gain_unrestricted",
+  emit("case3_CVAI", period, "n", nrow(f4))
+  emit("case3_CVAI", period, "interaction_gain_unrestricted",
        a4$numerical_diagnostics$interaction_gain,
        "five sex interactions; the bundled index model is the 1-df contrast")
-  emit("case4_CVAI", period, "bundled_1df_wald_p", signif(w_1[["p"]], 4))
-  emit("case4_CVAI", period, "unrestricted_5df_wald_p", signif(w_5[["p"]], 4),
+  emit("case3_CVAI", period, "bundled_1df_wald_p", signif(w_1[["p"]], 4))
+  emit("case3_CVAI", period, "unrestricted_5df_wald_p", signif(w_5[["p"]], 4),
        "the two tests answer different questions and need not agree")
 }
 
