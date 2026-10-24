@@ -92,7 +92,9 @@ v28_registry <- function() {
 #                         + 17.76 log10(TG) + 4.66 HDL
 #   HOMA_IR = (1/22.5) * glucose_mmol_L : insulin_uIU_mL
 # ---------------------------------------------------------------------------
-v32_product_expansions <- function() {
+# v33: this is part of the public API (see public_api_v33.R); the v32 name
+# v32_product_expansions is kept below as a deprecated alias.
+product_expansions <- function() {
   list(
     TyG_BMI = list(products = c("TyG:BMI" = 1)),
     TyG_WC = list(products = c("TyG:waist_cm" = 1)),
@@ -110,12 +112,16 @@ v32_product_expansions <- function() {
   )
 }
 
-# v32 four-class audit labels, one per registry row. GLM7 is additionally
+# v33: the four-class labels below are a HAND-WRITTEN reference answer, one
+# per registry row. They are NOT the algorithm's output. registry_audit_v33.R
+# derives the classification independently from each registered expression
+# plus its full registered base model and compares the two; test_audit_v33.R
+# requires the agreement to hold record by record. GLM7 is additionally
 # dual-registered (its second record, against the full embedded base, is
 # rank_preserving_exact), so the 25 rows yield 26 audit records:
 # 15 rank_preserving_exact + 1 rank_adding_exact + 5 reducible_to_interaction
 # + 5 outside_supported_class.
-v32_audit_classes <- function() {
+reference_audit_classes <- function() {
   c(GLM7 = "rank_adding_exact", TyG = "rank_preserving_exact",
     TyG_BMI = "reducible_to_interaction", TyG_WC = "reducible_to_interaction",
     TyG_WHtR = "outside_supported_class", METS_IR = "outside_supported_class",
@@ -131,19 +137,24 @@ v32_audit_classes <- function() {
     HOMA_IR_log = "rank_preserving_exact")
 }
 
-v32_registry <- function() {
+v33_registry <- function() {
   reg <- v28_registry()
-  cls <- v32_audit_classes()
+  cls <- reference_audit_classes()
   stopifnot(all(reg$index %in% names(cls)))
-  reg$audit_class_v32 <- unname(cls[reg$index])
-  exps <- v32_product_expansions()
-  reg$added_columns_v32 <- vapply(reg$index, function(nm) {
+  reg$reference_class <- unname(cls[reg$index])
+  exps <- product_expansions()
+  reg$added_columns <- vapply(reg$index, function(nm) {
     e <- exps[[nm]]
     if (is.null(e) || is.null(e$products)) return("")
     paste(names(e$products), collapse = ";")
   }, character(1))
   reg
 }
+
+# Deprecated v32 aliases, kept so earlier calling code keeps working.
+v32_product_expansions <- product_expansions
+v32_audit_classes <- reference_audit_classes
+v32_registry <- v33_registry
 
 compute_candidate_indices <- function(d) {
   # The caller must supply official-unit columns. Values outside each formula's

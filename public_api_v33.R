@@ -122,23 +122,38 @@ parse_index_expression <- function(expr) {
 # ---------------------------------------------------------------------------
 .v32_user_registry <- new.env()
 
-register_index <- function(name, expression, overwrite = FALSE) {
+register_index <- function(name, expression, units = character(0),
+                           overwrite = FALSE) {
   stopifnot(is.character(name), length(name) == 1L, nzchar(name))
   if (exists(name, envir = .v32_user_registry) && !overwrite)
     stop("index already registered: ", name, " (use overwrite = TRUE)")
   parsed <- parse_index_expression(expression)
   if (parsed$status == "unsupported")
     stop("expression is outside the supported grammar: ", parsed$expression)
+  if (length(units)) {
+    stopifnot(is.character(units), !is.null(names(units)))
+    parsed$units <- units
+  }
   assign(name, parsed, envir = .v32_user_registry)
   invisible(parsed)
 }
 
 # Dispatch one registered (or built-in) index to the right audit layer.
-# model_terms are the columns of the model the index would enter.
+#
+# v33: term identity is carried through the dispatch.  model_terms may be
+#   - a plain character vector of column names (legacy): each name becomes a
+#     bare key with undeclared transformation and units, and any reliance on
+#     it is reported as "unkeyed" in the output and by warning;
+#   - a NAMED character vector mapping data column name -> five-field term
+#     key (see term_identity_v33.R), e.g.
+#     c(tg_mmol_L = "TG|log10|10|mmol/L|-", glucose_mg_dL = "glucose|log10|10|mg/dL|-").
+# A term matches the model only when variable, transformation, log base and
+# encoding agree; declared units must agree as well.  log(x) therefore never
+# collapses onto x or 1/x, and log10 never silently equals ln.
 audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10) {
   parsed <- if (exists(name, envir = .v32_user_registry))
     get(name, envir = .v32_user_registry) else {
-      exps <- v32_product_expansions()
+      exps <- product_expansions()
       if (name %in% names(exps)) {
         e <- exps[[name]]
         list(status = "product_expandable", intercept = e$intercept %||% 0,
@@ -148,16 +163,48 @@ audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10) 
     }
   if (parsed$status == "product_expandable")
     return(audit_product_in_model(
-      name, model_terms,
+      name, unname(model_terms),
       list(intercept = parsed$intercept, linear = parsed$linear,
            products = parsed$products),
       data = data, tol = tol))
   # additive (log-)linear: C = const + sum_j a_j w_j; the constant is absorbed
-  # by the model intercept.  Embedded terms are the parsed components that
-  # actually appear among the model terms.
+  # by the model intercept and enters the coefficient map.
+  units <- parsed$units %||% character(0)
+  unit_of <- function(nm) if (nm %in% names(units)) units[[nm]] else "?"
   idx_terms <- c(parsed$linear, parsed$logs)
-  emb <- idx_terms[intersect(model_terms, names(idx_terms))]
-  audit_index_in_model(idx_terms, emb, emb, data = data, tol = tol)
+  idx_keys <- c(
+    vapply(names(parsed$linear),
+           function(nm) make_term_key(nm, "identity", "-", unit_of(nm), "-"),
+           character(1)),
+    vapply(names(parsed$logs), function(nm) {
+      b <- parsed$log_bases[[nm]]  # parser stores 0L for ln, 10L for log10
+      make_term_key(nm, if (b == 10L) "log10" else "log",
+                    if (b == 10L) "10" else "e", unit_of(nm), "-")
+    }, character(1)))
+  keyed <- !is.null(names(model_terms)) && all(nzchar(names(model_terms)))
+  if (keyed) {
+    model_keys <- unname(model_terms)
+    names(model_keys) <- names(model_terms)
+  } else {
+    model_keys <- setNames(vapply(model_terms, bare_term_key, character(1)),
+                           model_terms)
+  }
+  cmp <- term_key_in(idx_keys, unname(model_keys))
+  emb <- idx_terms[cmp != "mismatch"]
+  unkeyed_terms <- names(idx_terms)[cmp == "unkeyed"]
+  out <- audit_index_in_model(idx_terms, emb, emb, data = data, tol = tol,
+                              intercept = parsed$intercept)
+  out$term_matching <- list(
+    mode = if (keyed) "keyed" else "legacy_bare_names",
+    unkeyed_terms = unkeyed_terms,
+    note = paste("terms matched on the five-field identity",
+                 "variable|transform|base|units|encoding;",
+                 "'unkeyed' means units were undeclared on at least one side"))
+  if (length(unkeyed_terms) || !keyed)
+    warning("audit_registered_index: unit metadata undeclared for ",
+            paste(c(names(model_terms), unkeyed_terms), collapse = ", "),
+            " - declare units via register_index(units = ...) and named model_terms keys")
+  out
 }
 
 `%||%` <- function(a, b) if (is.null(a)) b else a

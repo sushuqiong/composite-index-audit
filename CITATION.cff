@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "CompositeIndexAudit"
+abstract: "Pre-fitting algebraic classification of composite indices entered alongside their own components."
+type: software
+license: MIT
+repository-code: "https://github.com/sushuqiong/composite-index-audit"
+authors:
+  - family-names: "Su"
+    given-names: "Shuqiong"
+  - family-names: "Yang"
+    given-names: "Shiyao"
+  - family-names: "Huang"
+    given-names: "Yueli"
+  - family-names: "Hu"
+    given-names: "Rongyi"
+  - family-names: "Liang"
+    given-names: "Senmei"
+  - family-names: "Jiang"
+    given-names: "Mengjie"
+  - family-names: "Liu"
+    given-names: "Aiqun"
+    orcid: "https://orcid.org/0000-0002-1077-5585"

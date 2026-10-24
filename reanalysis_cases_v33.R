@@ -1,5 +1,5 @@
-# reanalysis_cases_v32.R (PURE ASCII)
-# Stage 3: re-analysis of published model specifications on public NHANES
+# reanalysis_cases_v33.R (PURE ASCII)
+# Stage 3 (v33): re-analysis of published model specifications on public NHANES
 # data, demonstrating what the audit reports for each.
 #
 #   Case 1  Lan et al., BMC Public Health 2025;25:2512 (DOI
@@ -26,14 +26,16 @@
 suppressPackageStartupMessages(library(survey))
 options(survey.lonely.psu = "adjust")
 
-CODE_DIR <- "C:/Users/sushq/WorkBuddy/2026-08-12-22-01-44/v32_build/code"
-OUT      <- "C:/Users/sushq/WorkBuddy/2026-08-12-22-01-44/v32_build/results"
-source(file.path(CODE_DIR, "index_registry_v32.R"))
-source(file.path(CODE_DIR, "algebra_audit_v32.R"))
-source(file.path(CODE_DIR, "model_evaluation_v32.R"))
-source(file.path(CODE_DIR, "data_build_v32.R"))
+CODE_DIR <- Sys.getenv("CIA_CODE_DIR", unset = "")
+OUT      <- Sys.getenv("CIA_OUT", unset = "")
+if (!nzchar(CODE_DIR) || !nzchar(OUT))
+  stop("set CIA_CODE_DIR and CIA_OUT before running reanalysis_cases_v33.R")
+source(file.path(CODE_DIR, "index_registry_v33.R"))
+source(file.path(CODE_DIR, "algebra_audit_v33.R"))
+source(file.path(CODE_DIR, "model_evaluation_v33.R"))
+source(file.path(CODE_DIR, "data_build_v33.R"))
 
-exps <- v32_product_expansions()
+exps <- product_expansions()
 rows <- list()
 emit <- function(case, period, quantity, value, detail = "") {
   rows[[length(rows) + 1L]] <<- data.frame(
@@ -57,7 +59,7 @@ wald1 <- function(fit, term_formula) {
 }
 
 for (period in c("P", "L")) {
-  d <- build_period_v32(period)
+  d <- build_period_v33(period)
 
   # ---------------- Case 1: LAP with waist + TG (Lan 2025 Model 3 core) ----
   f1 <- fit_frame(d, c("age", "sex", "waist_cm", "tg_mmol_L", "LAP"))
@@ -153,9 +155,41 @@ for (period in c("P", "L")) {
   emit("case3_boundary", period, "weighted_cor_TyG_TG", signif(wcor(f3$TyG, f3$tg_mg_dL, f3$weight), 4),
        "high empirical correlation is not an identity")
   emit("case3_boundary", period, "weighted_cor_TyG_glucose", signif(wcor(f3$TyG, f3$glucose_mg_dL, f3$weight), 4))
+
+  # ---------------- Case 4: CVAI bundled 1 df vs unrestricted 5 df --------
+  # LAP carries two interactions, so its contrast is 1 df vs 2 df.  CVAI
+  # carries FIVE sex interactions; the honest contrast is 1 df vs 5 df.
+  f4 <- fit_frame(d, c("age", "sex", "BMI", "waist_cm", "log10_tg",
+                       "hdl_mmol_L", "CVAI"))
+  f4$age_f <- f4$age * f4$sexFemale
+  f4$bmi_f <- f4$BMI * f4$sexFemale
+  f4$w_f <- f4$waist_cm * f4$sexFemale
+  f4$ltg_f <- f4$log10_tg * f4$sexFemale
+  f4$hdl_f <- f4$hdl_mmol_L * f4$sexFemale
+  des4 <- make_survey_design(f4)
+  a4 <- audit_product_in_model("CVAI",
+    c("age", "sex", "BMI", "waist_cm", "log10_tg", "hdl_mmol_L"),
+    exps$CVAI, data = f4)
+  c1m <- svyglm(dx_diab ~ age + sex + BMI + waist_cm + log10_tg + hdl_mmol_L +
+                  CVAI, design = des4, family = quasibinomial())
+  c5m <- svyglm(dx_diab ~ age + sex + BMI + waist_cm + log10_tg + hdl_mmol_L +
+                  age_f + bmi_f + w_f + ltg_f + hdl_f,
+                design = des4, family = quasibinomial())
+  w_1 <- wald1(c1m, ~CVAI)
+  w_5 <- wald1(c5m, ~ age_f + bmi_f + w_f + ltg_f + hdl_f)
+  emit("case4_CVAI", period, "audit_classification", a4$classification,
+       "CVAI entered next to its six components")
+  emit("case4_CVAI", period, "n", nrow(f4))
+  emit("case4_CVAI", period, "interaction_gain_unrestricted",
+       a4$numerical_diagnostics$interaction_gain,
+       "five sex interactions; the bundled index model is the 1-df contrast")
+  emit("case4_CVAI", period, "bundled_1df_wald_p", signif(w_1[["p"]], 4))
+  emit("case4_CVAI", period, "unrestricted_5df_wald_p", signif(w_5[["p"]], 4),
+       "the two tests answer different questions and need not agree")
 }
 
 res <- do.call(rbind, rows)
+
 print(res, row.names = FALSE)
-write.csv(res, file.path(OUT, "v32_reanalysis_cases.csv"), row.names = FALSE, na = "")
-cat("\n=== v32 reanalysis cases done ===\n")
+write.csv(res, file.path(OUT, "v33_reanalysis_cases.csv"), row.names = FALSE, na = "")
+cat("\n=== v33 reanalysis cases done ===\n")

@@ -1,21 +1,26 @@
-# vignette_v32.R  (PURE ASCII)  -  runs in a clean session without NHANES data
+# vignette_v33.R  (PURE ASCII)  -  runs in a clean session without NHANES data
 #
-# Box 1 of the v32 manuscript.  Ten minutes, four audit classes, the
-# coefficient map, the aliased coefficient a rank-preserving index produces
-# when fitted anyway, and the public API (parse / register / verify /
-# normalize).
+# Box 1 of the v33 manuscript, verbatim and self-contained: the example builds
+# its own synthetic data, so it runs from a fresh directory with
+#   Rscript vignette_v33.R
+# Ten minutes, four audit classes, the coefficient map, the aliased
+# coefficient a rank-preserving index produces when fitted anyway, the
+# no-data audit, the keyed term identity, and the public API
+# (parse / register / verify / normalize).
 #
 # Expected output (abridged):
 #   [1] "rank_preserving_exact" "rank_adding_exact" "reducible_to_interaction"
 #       "outside_supported_class"
+#   [1] "rank_preserving_exact"        # the no-data audit of TyG
 #   GLM7 coefficient NA (aliased)
 #   LAP: X_[W,I] K beta reproduces the linear predictor exactly
 #   verify_index_column flags the deliberately miss-scaled column
 #   normalize_log_base rescales by ln(10) = 2.302585
 
-source("index_registry_v32.R")
-source("algebra_audit_v32.R")
-source("public_api_v32.R")
+source("index_registry_v33.R")
+source("algebra_audit_v33.R")
+source("term_identity_v33.R")
+source("public_api_v33.R")
 
 set.seed(20261023); n <- 1500
 d <- data.frame(
@@ -29,13 +34,17 @@ d$sexFemale <- as.numeric(d$sex == "Female")
 d$log_tg_mg <- log(d$tg_mmol_L * 88.57)
 d$log_glucose_mg <- log(d$glucose_mg_dL)
 d$TyG <- log(d$tg_mmol_L * 88.57 * d$glucose_mg_dL / 2)          # ln(TG*G/2)
-d$metab <- log10(d$glucose_mg_dL) + log10(d$tg_mmol_L)           # stand-in residual
+# metab is the worked-example residual of GLM7 = metab + log10(age) +
+# log10(BMI).  In this synthetic example it is a stand-in built from two
+# measured columns; the registered GLM7 used on NHANES takes the five
+# published components (see index_registry_v33.R).
+d$metab <- log10(d$glucose_mg_dL) + log10(d$tg_mmol_L)
 d$log_age <- log10(d$age); d$log_bmi <- log10(d$BMI)
 d$GLM7 <- d$metab + d$log_age + d$log_bmi
 d$LAP <- ifelse(d$sex == "Male", d$waist_cm - 65, d$waist_cm - 58) * d$tg_mmol_L
 
 # --- the four classes --------------------------------------------------------
-reg <- v32_registry(); exps <- v32_product_expansions()
+reg <- v33_registry(); exps <- product_expansions()
 
 a_tyg <- audit_index_in_model(c(log_tg_mg = 1, log_glucose_mg = 1),
                               c(log_tg_mg = 1, log_glucose_mg = 1), data = d)
@@ -53,6 +62,14 @@ print(classes)
 stopifnot(identical(unname(classes),
   c("rank_preserving_exact", "rank_adding_exact",
     "reducible_to_interaction", "outside_supported_class")))
+
+# --- the no-data audit (v33): the verdict is symbolic, not a sample property -
+# TyG against its own components, with no rows at all.
+a_nodata <- audit_index_in_model(c(log_tg_mg = 1, log_glucose_mg = 1),
+                                 c(log_tg_mg = 1, log_glucose_mg = 1),
+                                 data = NULL)
+print(a_nodata$classification)
+stopifnot(a_nodata$classification == "rank_preserving_exact")
 
 # --- coefficient map and the aliased coefficient -----------------------------
 print(a_glm7$coefficient_map)          # gamma_log_age = beta_log_age + beta_C
@@ -88,6 +105,19 @@ a_demo <- audit_registered_index("DemoTyGBMI", c("sex", "TyG", "BMI"), data = d)
 print(a_demo$classification)           # "reducible_to_interaction"
 stopifnot(a_demo$classification == "reducible_to_interaction")
 
+# Keyed model terms: the same call, but with the five-field term identity
+# declared explicitly, so units and log bases are part of the match.
+register_index("DemoLogTG", "log(tg_mmol_L)", units = c(tg_mmol_L = "mmol/L"),
+               overwrite = TRUE)
+d$DemoLogTG <- log(d$tg_mmol_L)
+a_keyed <- audit_registered_index(
+  "DemoLogTG",
+  c(log_tg = "tg_mmol_L|log|e|mmol/L|-"),
+  data = d)
+print(a_keyed$classification)          # "rank_preserving_exact"
+stopifnot(a_keyed$classification == "rank_preserving_exact",
+          a_keyed$term_matching$mode == "keyed")
+
 v_ok <- verify_index_column(d, "DemoTyGBMI")
 print(v_ok$ok)                         # TRUE
 d$DemoTyGBMI_bad <- d$TyG * d$BMI * 1.01   # a 1% scale slip, as in unit mistakes
@@ -100,4 +130,4 @@ cf_10 <- normalize_log_base(cf_ln, from = "ln", to = "log10")
 print(round(cf_10, 4))                 # 1.8421, 2.5328 (x ln(10) = 2.302585)
 stopifnot(abs(cf_10[["log_tg_mg"]] - 0.8 * log(10)) < 1e-12)
 
-cat("=== vignette_v32 done: all classes, map, aliasing and API verified ===\n")
+cat("=== vignette_v33 done: classes, no-data audit, keyed identity, map, aliasing and API verified ===\n")

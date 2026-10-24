@@ -1,6 +1,11 @@
 # v28 survey-weighted model-evaluation functions.
 # AUC is calculated from linear-predictor ranks. Brier and calibration use
 # inverse-logit probabilities. Every paired difference uses the same replicate.
+#
+# v33 addition: threshold_shift_table() quantifies what a mishandled unit
+# conversion does to DECISIONS, not to ranking: at a fixed risk threshold the
+# number flagged high-risk and the number of true cases missed move, while
+# the AUC does not. This is the decision-analytic consequence Figure 4 shows.
 
 suppressPackageStartupMessages(library(survey))
 options(survey.lonely.psu = "adjust")
@@ -552,4 +557,44 @@ run_glm7_example <- function(development_data, validation_data, ...) {
     dx ~ sex + log_age + log_bmi,
     dx ~ sex + log_age + log_bmi + GLM7,
     index = "GLM7", ...)
+}
+
+# ---------------------------------------------------------------------------
+# v33: decision consequences of a mishandled unit conversion.
+# lp_correct / lp_bad are two linear predictors for the SAME rows (here the
+# later-period predictions before and after an un-mapped unit shift).  At
+# each risk threshold t we report, on the survey-weighted population and on
+# the raw rows:
+#   flagged        predicted risk >= t (referred / treated as high risk)
+#   cases_missed   true cases with predicted risk < t
+# The AUC is identical for the two predictors; the decision counts are not.
+# ---------------------------------------------------------------------------
+threshold_shift_table <- function(data, lp_correct, lp_bad, outcome = "dx",
+                                  weight = "weight",
+                                  thresholds = c(0.05, 0.10, 0.15, 0.20)) {
+  stopifnot(length(lp_correct) == nrow(data), length(lp_bad) == nrow(data))
+  y <- as.integer(data[[outcome]]); w <- as.numeric(data[[weight]])
+  pc <- stats::plogis(as.numeric(lp_correct))
+  pb <- stats::plogis(as.numeric(lp_bad))
+  ok <- is.finite(pc) & is.finite(pb) & !is.na(y) & is.finite(w) & w > 0
+  y <- y[ok]; w <- w[ok]; pc <- pc[ok]; pb <- pb[ok]
+  rows <- lapply(thresholds, function(t) {
+    fc <- pc >= t; fb <- pb >= t
+    data.frame(
+      threshold = t,
+      n_flagged_correct = sum(fc), n_flagged_bad = sum(fb),
+      w_flagged_correct = sum(w[fc]), w_flagged_bad = sum(w[fb]),
+      delta_w_flagged = sum(w[fb]) - sum(w[fc]),
+      cases_missed_correct = sum(y == 1 & !fc),
+      cases_missed_bad = sum(y == 1 & !fb),
+      w_cases_missed_correct = sum(w[y == 1 & !fc]),
+      w_cases_missed_bad = sum(w[y == 1 & !fb]),
+      ppv_correct = if (any(fc)) sum(w[fc & y == 1]) / sum(w[fc]) else NA_real_,
+      ppv_bad = if (any(fb)) sum(w[fb & y == 1]) / sum(w[fb]) else NA_real_,
+      stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, rows)
+  out$delta_cases_missed <- out$cases_missed_bad - out$cases_missed_correct
+  out$delta_w_cases_missed <- out$w_cases_missed_bad - out$w_cases_missed_correct
+  out
 }

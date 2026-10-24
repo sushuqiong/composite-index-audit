@@ -80,7 +80,12 @@ audit_composite_index <- function(index_terms, embedded_terms,
   if (!exact) {
     status <- if (approximate) "approximate_collinearity" else "not_decomposable"
   } else if (is.na(rank_gain)) {
-    status <- if (length(residual) == 0L) "rank_preserving_exact" else "rank_adding_exact"
+    # v33 fix: residual is a fixed-length named vector over all_terms, so its
+    # length is never zero. The symbolic question is whether every entry is
+    # zero within tolerance (C = E). This makes the no-data branch
+    # independent of the sample rank: audit_index_in_model(c(x=1,y=1),
+    # c(x=1,y=1), data = NULL) now returns rank_preserving_exact.
+    status <- if (all(abs(residual) <= tol)) "rank_preserving_exact" else "rank_adding_exact"
   } else {
     status <- if (rank_gain == 0L) "rank_preserving_exact" else "rank_adding_exact"
   }
@@ -115,9 +120,13 @@ audit_composite_index <- function(index_terms, embedded_terms,
 # [Z,E,C] and [Z,E,R] are linked by
 #   gamma_Z = beta_Z,  gamma_tk = beta_tk + e_k beta_C,  gamma_R = beta_C.
 # ---------------------------------------------------------------------------
+# v33: intercept is the additive constant of the registered index (for
+# example HOMA-IR carries -log(22.5) once on the log scale). It maps to the
+# model intercept: gamma_0 = beta_0 + intercept * beta_C.
 audit_index_in_model <- function(index_terms, embedded_terms, model_terms = embedded_terms,
                                  data = NULL, tol = 1e-10,
-                                 approximate_correlation = 0.90) {
+                                 approximate_correlation = 0.90,
+                                 intercept = 0) {
   base <- audit_composite_index(index_terms, embedded_terms, model_terms, data = data,
                                 tol = tol, approximate_correlation = approximate_correlation)
   failure_states <- character()
@@ -137,6 +146,7 @@ audit_index_in_model <- function(index_terms, embedded_terms, model_terms = embe
     K <- diag(length(b_names))
     rownames(K) <- g_names; colnames(K) <- b_names
     for (tk in names(embedded_terms)) K[tk, "C"] <- embedded_terms[[tk]]
+    if (intercept != 0) K["(Intercept)", "C"] <- intercept
     coefficient_map <- K
     blocking_reason <- NA_character_
   } else {
@@ -359,6 +369,12 @@ run_unit_scaling_sensitivity <- function(development_data, later_data,
     correctly_reparameterized_later_metrics = as.list(refit_metrics),
     incorrectly_transferred_later_metrics = as.list(bad_metrics),
     incorrect_transfer_lp_shift = unique(round(lp_l_bad - lp_l_original, 12))[[1]],
+    # v33: return the two later-period linear predictors so the caller can
+    # quantify decision consequences (threshold_shift_table) rather than only
+    # calibration metrics.
+    lp_l_correct = lp_l_original,
+    lp_l_incorrect_transfer = lp_l_bad,
+    lp_l_refit = lp_l_alt_refit,
     interpretation = paste(
       "Consistent unit conversion adds a constant to GLM7 and is absorbed by the intercept after refitting.",
       "Applying coefficients to a differently scaled score without the mapped intercept preserves ranking but shifts probability calibration."

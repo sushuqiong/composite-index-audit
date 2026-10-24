@@ -1,11 +1,19 @@
-# data_build_v32.R (PURE ASCII)
-# Canonical NHANES P/L loader for every v32 script.  The body of
-# build_period_v32() is byte-identical to the copy inside
-# build_results_v32.R; verify_package_v32.py checks the two copies match.
+# data_build_v33.R (PURE ASCII)
+# Canonical NHANES P/L loader for every v33 script.  The body of
+# build_period_v33() is byte-identical to the copy inside
+# build_results_v33.R; the package audit checks the two copies match.
+#
+# v33: no absolute paths are hard-coded.  Point CIA_DATA_ROOT at the
+# directory containing the official NHANES XPT files before sourcing; the
+# loader fails closed if the variable is unset.
 
 suppressPackageStartupMessages(library(haven))
 
-DATA_ROOT <- "C:/Users/sushq/WorkBuddy/2026-08-12-22-01-44/v30_build/xpt_data"
+DATA_ROOT <- Sys.getenv("CIA_DATA_ROOT", unset = "")
+if (!nzchar(DATA_ROOT))
+  stop("set CIA_DATA_ROOT to the directory containing the NHANES XPT files")
+if (!dir.exists(DATA_ROOT))
+  stop("CIA_DATA_ROOT does not exist: ", DATA_ROOT)
 
 read_unique <- function(file, cols) {
   p <- file.path(DATA_ROOT, file)
@@ -16,7 +24,7 @@ read_unique <- function(file, cols) {
   x[, cols, drop = FALSE]
 }
 
-build_period_v32 <- function(period = c("P", "L")) {
+build_period_v33 <- function(period = c("P", "L")) {
   period <- match.arg(period)
   p <- if (period == "P") {
     list(
