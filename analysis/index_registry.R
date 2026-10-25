@@ -92,7 +92,7 @@ v28_registry <- function() {
 #                         + 17.76 log10(TG) + 4.66 HDL
 #   HOMA_IR = (1/22.5) * glucose_mmol_L : insulin_uIU_mL
 # ---------------------------------------------------------------------------
-# v33: this is part of the public API (see public_api_v33.R); the v32 name
+# v34: this is part of the public API (see public_api.R); the v32 name
 # v32_product_expansions is kept below as a deprecated alias.
 product_expansions <- function() {
   list(
@@ -112,10 +112,10 @@ product_expansions <- function() {
   )
 }
 
-# v33: the four-class labels below are a HAND-WRITTEN reference answer, one
-# per registry row. They are NOT the algorithm's output. registry_audit_v33.R
+# v34: the four-class labels below are a HAND-WRITTEN reference answer, one
+# per registry row. They are NOT the algorithm's output. registry_audit.R
 # derives the classification independently from each registered expression
-# plus its full registered base model and compares the two; test_audit_v33.R
+# plus its full registered base model and compares the two; test_audit.R
 # requires the agreement to hold record by record. GLM7 is additionally
 # dual-registered (its second record, against the full embedded base, is
 # rank_preserving_exact), so the 25 rows yield 26 audit records:
@@ -137,7 +137,33 @@ reference_audit_classes <- function() {
     HOMA_IR_log = "rank_preserving_exact")
 }
 
-v33_registry <- function() {
+# v34: the registered GLM7 string is "metab + log10(age) + log10(BMI)", which
+# names a composite sub-expression and hides four of the seven routine
+# measures it is named for.  Whether a component is present changes the
+# classification, so the seven items are written out here verbatim.  metab is
+# a name for the first five terms, not an eighth measure: expanding it changes
+# nothing about the algebra.
+GLM7_SEVEN_MEASURES <- c("glucose", "insulin", "triglycerides", "LDL",
+                         "HDL", "age", "BMI")
+glm7_full_expression <- function() {
+  paste0("log10(glucose_mg_dL) + log10(insulin_pmol_L) + log10(tg_mmol_L)",
+         " + log10(LDL_mmol_L) - log10(hdl_mmol_L)",
+         " + log10(age) + log10(BMI)")
+}
+
+# v34: operationally defined scale columns for Table 1, so the reader can see
+# both the scale of the index column C and the transformation under which its
+# components appear in the registered base W.  The two are different things
+# and were previously conflated in a single "Scale" column.
+component_scale_in_base <- function(component_terms) {
+  parts <- strsplit(component_terms, ";", fixed = TRUE)[[1]]
+  has_log10 <- any(grepl("log10(", parts, fixed = TRUE))
+  has_ln    <- any(grepl("log(", parts, fixed = TRUE))
+  if (has_log10 && has_ln) "mixed" else if (has_log10) "log10"
+  else if (has_ln) "log" else "identity"
+}
+
+registry_v34 <- function() {
   reg <- v28_registry()
   cls <- reference_audit_classes()
   stopifnot(all(reg$index %in% names(cls)))
@@ -148,13 +174,33 @@ v33_registry <- function() {
     if (is.null(e) || is.null(e$products)) return("")
     paste(names(e$products), collapse = ";")
   }, character(1))
+  # Table 1 columns requested in review: keep the registered string and add
+  # the fully expanded one so nothing is hidden behind a sub-expression name.
+  reg$expanded_formula <- reg$formula
+  reg$expanded_formula[reg$index == "GLM7"] <- glm7_full_expression()
+  # number of DISTINCT measured variables entering the expanded expression.
+  # Splitting on "+" alone undercounts GLM7 (the HDL term carries a minus
+  # sign), which would contradict the seven measures the index is named for.
+  reg$n_measures <- vapply(reg$expanded_formula, function(s) {
+    v <- tryCatch(all.vars(parse(text = s)), error = function(e) character(0))
+    # several registry rows store a label (for example "(waist_cm-65_or_58)")
+    # rather than a parseable expression; report NA rather than a spurious 0
+    if (!length(v)) NA_integer_ else length(unique(v))
+  }, integer(1))
+  reg$scale_of_C <- reg$model_scale
+  reg$scale_of_components_in_W <- vapply(reg$component_terms,
+                                         component_scale_in_base, character(1))
+  reg$provenance <- ifelse(reg$status == "published_formula",
+                           "published formula", "constructed illustration")
+  reg$endorsement <- ifelse(grepl("^ref", reg$citation_key),
+                            "published source, cited", "no published source")
   reg
 }
 
 # Deprecated v32 aliases, kept so earlier calling code keeps working.
 v32_product_expansions <- product_expansions
 v32_audit_classes <- reference_audit_classes
-v32_registry <- v33_registry
+v32_registry <- registry_v34
 
 compute_candidate_indices <- function(d) {
   # The caller must supply official-unit columns. Values outside each formula's

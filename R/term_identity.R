@@ -1,5 +1,5 @@
-# term_identity_v33.R (PURE ASCII)
-# Five-field identity for a model term, introduced in v33 so that the public
+# term_identity.R (PURE ASCII)
+# Five-field identity for a model term, introduced in v34 so that the public
 # API no longer matches terms by bare variable name.
 #
 # A term key is the string
@@ -20,6 +20,20 @@
 # transform never matches identity.  Unit metadata therefore fails visibly
 # (a warning) rather than silently passing.
 
+
+#' Build a five-field term identity key
+#'
+#' @param variable Column name.
+#' @param transform Transformation applied, for example \code{"identity"},
+#'   \code{"log"} or \code{"log10"}.
+#' @param base Log base, or \code{"-"}.
+#' @param units Units of the variable, or \code{"-"}.
+#' @param encoding Factor coding, or \code{"-"}.
+#' @return A character scalar of the form
+#'   \code{variable|transform|base|units|encoding}.
+#' @export
+#' @examples
+#' make_term_key("tg_mmol_L", "log10", "10", "mmol/L", "-")
 make_term_key <- function(variable, transform = "identity", base = "-",
                           units = "?", encoding = "-") {
   stopifnot(length(variable) == 1L, nzchar(variable))
@@ -48,6 +62,17 @@ term_key_compare <- function(a, b) {
 
 # Vectorised membership: for each key in `keys`, "match" / "unkeyed" /
 # "mismatch" against the best available counterpart in `against`.
+
+#' Compare index term keys against model term keys
+#'
+#' @param keys Character vector of index term keys.
+#' @param against Character vector of model term keys.
+#' @return A character vector: \code{"match"}, \code{"mismatch"} or
+#'   \code{"unkeyed"}.
+#' @export
+#' @examples
+#' term_key_in(make_term_key("tg", "log", "e", "mmol/L", "-"),
+#'             make_term_key("tg", "log", "e", "mmol/L", "-"))
 term_key_in <- function(keys, against) {
   vapply(keys, function(k) {
     cmp <- vapply(against, term_key_compare, character(1), b = k)

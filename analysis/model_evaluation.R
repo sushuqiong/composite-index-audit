@@ -2,7 +2,7 @@
 # AUC is calculated from linear-predictor ranks. Brier and calibration use
 # inverse-logit probabilities. Every paired difference uses the same replicate.
 #
-# v33 addition: threshold_shift_table() quantifies what a mishandled unit
+# v34 addition: threshold_shift_table() quantifies what a mishandled unit
 # conversion does to DECISIONS, not to ranking: at a fixed risk threshold the
 # number flagged high-risk and the number of true cases missed move, while
 # the AUC does not. This is the decision-analytic consequence Figure 4 shows.
@@ -560,7 +560,7 @@ run_glm7_example <- function(development_data, validation_data, ...) {
 }
 
 # ---------------------------------------------------------------------------
-# v33: decision consequences of a mishandled unit conversion.
+# v34: decision consequences of a mishandled unit conversion.
 # lp_correct / lp_bad are two linear predictors for the SAME rows (here the
 # later-period predictions before and after an un-mapped unit shift).  At
 # each risk threshold t we report, on the survey-weighted population and on

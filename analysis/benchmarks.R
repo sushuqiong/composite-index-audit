@@ -1,5 +1,5 @@
-# benchmarks_v33.R (PURE ASCII)
-# Software-particle staples for v33:
+# benchmarks.R (PURE ASCII)
+# Software-particle staples for v34:
 #   (a) runtime and memory of the audit versus fitting the model;
 #   (b) a MEASURED comparison against the diagnostics a fitted model already
 #       supports (base R alias(), qr() rank, kappa(), car::vif(), deriv()).
@@ -10,13 +10,13 @@ suppressPackageStartupMessages(library(survey))
 
 need_env <- function(nm) {
   v <- Sys.getenv(nm, unset = "")
-  if (!nzchar(v)) stop("set ", nm, " before running benchmarks_v33.R")
+  if (!nzchar(v)) stop("set ", nm, " before running benchmarks.R")
   v
 }
 CODE_DIR <- need_env("CIA_CODE_DIR")
 OUT      <- need_env("CIA_OUT")
-for (f in c("index_registry_v33.R", "algebra_audit_v33.R",
-            "term_identity_v33.R", "public_api_v33.R"))
+for (f in c("index_registry.R", "algebra_audit.R",
+            "term_identity.R", "public_api.R"))
   source(file.path(CODE_DIR, f), local = TRUE)
 
 rows <- list()
@@ -158,6 +158,6 @@ emit("tool_comparison", "unit_conversion", "alias/qr/kappa/vif/deriv",
 
 res <- do.call(rbind, rows)
 print(res, row.names = FALSE)
-write.csv(res, file.path(OUT, "v33_benchmarks_and_tool_comparison.csv"),
+write.csv(res, file.path(OUT, "v34_benchmarks_and_tool_comparison.csv"),
           row.names = FALSE, na = "")
-cat("\n=== v33 benchmarks done ===\n")
+cat("\n=== v34 benchmarks done ===\n")

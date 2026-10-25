@@ -1,0 +1,13 @@
+citHeader("To cite CompositeIndexAudit in publications, please use the
+          accompanying paper and the archived software release.")
+
+bibentry(
+  key = "CompositeIndexAudit",
+  bibtype = "Manual",
+  title = "CompositeIndexAudit: Pre-Fitting Algebraic Classification of
+           Composite Indices Entered Alongside Their Own Components",
+  author = person("Shuqiong", "Su"),
+  year = "2026",
+  note = "R package version 0.34.0",
+  url = "https://github.com/sushuqiong/composite-index-audit"
+)

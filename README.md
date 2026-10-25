@@ -1,7 +1,8 @@
 # composite-index-audit
 
-Pre-fitting algebraic classification of composite indices entered alongside
-their own components in a regression model.
+R package **CompositeIndexAudit** (version 0.34.0, tag v34): pre-fitting
+algebraic classification of composite indices entered alongside their own
+components in a regression model.
 
 Many composite indices (TyG, HOMA-IR, LAP, CVAI, NLR, SII, GLM7, ...) are
 built from the same variables that enter the fitted model. Whether the index
@@ -22,7 +23,8 @@ returns one of four classes:
 It also returns the closed-form coefficient map `gamma = K beta` where one
 exists, the named interaction bundle, the intercept remapping
 `beta_0* = beta_0 - k beta_C` for a unit conversion `C* = C + k`, and an
-enumerated failure state that is never silently downgraded.
+enumerated failure state (`approximate_collinearity`, `fit_failed`,
+`not_decomposable`) that is never silently downgraded.
 
 ## Term identity
 
@@ -32,11 +34,13 @@ different terms even when the column names coincide. A term whose units are
 not declared never matches a declared one, so unknown provenance fails
 closed.
 
-## Quick start (no NHANES download)
+## Install and test
 
 ```r
-source("algebra_audit_v33.R"); source("term_identity_v33.R")
-source("index_registry_v33.R"); source("public_api_v33.R")
+# from a source checkout
+# install.packages(c("survey", "haven", "digest"))  # the only dependencies
+# R CMD INSTALL CompositeIndexAudit_0.34.0.tar.gz   # or install the source dir
+library(CompositeIndexAudit)
 
 # GLM7 = metab + log10(age) + log10(BMI); base = sex + log10(age) + log10(BMI)
 a <- audit_index_in_model(c(metab = 1, log_age = 1, log_bmi = 1),
@@ -47,45 +51,37 @@ a$classification                     # "rank_adding_exact" (no data needed)
 b <- audit_index_in_model(c(metab = 1, log_age = 1, log_bmi = 1),
                           c(metab = 1, log_age = 1, log_bmi = 1))
 b$classification                     # "rank_preserving_exact"
-
-# a native-scale product: LAP = (waist - 65|58) x TG
-e <- audit_product_in_model("LAP", c("sex", "waist_cm", "tg_mmol_L"),
-                            product_expansions()$LAP, data = d)
-e$classification                     # "reducible_to_interaction"
 ```
 
-`vignette_v33.R` is the full self-verifying example; `test_audit_v33.R`
-runs the unit tests, including the v33 regression cases (wrong log base,
-missing intercept, extra base column, zero-variance column, pre-existing
-interaction, deliberately failing fit, and the no-data C = x + y case that
-the v32 `length(residual) == 0` test mis-classified).
+`testthat::test_dir("tests/testthat")` runs the distributed suite (46
+expectations across four files); `R CMD check` returns 0 errors, 0 warnings
+and 0 notes under R 4.5.1.
 
-## Files
+## Layout
 
-- `algebra_audit_v33.R` - symbolic and numerical layers
-  (`audit_index_in_model`, `audit_product_in_model`)
-- `index_registry_v33.R` - the frozen 25-expression registry and product
-  expansions
-- `term_identity_v33.R` - the five-field term identity and its three-state
-  comparison (match / unkeyed / mismatch)
-- `public_api_v33.R` - `parse_index_expression`, `register_index`,
-  `audit_registered_index`, `verify_index_column`, `normalize_log_base`
-- `registry_audit_v33.R` - independent re-derivation of all 26 registry
-  classifications (this is what makes the class counts a measurement)
-- `model_evaluation_v33.R`, `data_build_v33.R`, `build_results_v33.R` -
-  the design-aware NHANES pipeline
-- `reanalysis_cases_v33.R` - reproduction of published model specifications
-  on public NHANES data
-- `simulation_v33.R` - the 12-cell ADEMP study
-- `benchmarks_v33.R` - runtime and the measured comparison with
-  `alias()`, QR rank, `kappa()`, `car::vif()` and `deriv()`
-- `vignette_v33.R`, `test_audit_v33.R` - Box 1 and the unit tests
+- `R/` - the package sources: the symbolic and numerical layers
+  (`algebra_audit.R`), the frozen 25-expression registry
+  (`index_registry.R`), the five-field term identity (`term_identity.R`),
+  the public API (`public_api.R`), `audit_fit()` for fitted-model objects
+  (`audit_fit.R`), and the independent registry re-derivation
+  (`registry_audit.R`)
+- `man/` - roxygen-generated help pages; `inst/CITATION`; `NEWS.md`
+- `tests/testthat/` - the test suite
+- `analysis/` - the NHANES demonstration pipeline: `build_results.R`,
+  `simulation.R` (the 12-cell ADEMP study), `reanalysis_cases.R`
+  (reproduction of published model specifications), `benchmarks.R`
+  (runtime and the measured comparison with `alias()`, QR rank, `kappa()`,
+  `car::vif()` and `deriv()`), `flow_counts.R`, `verify_unit_factor.R`,
+  `reclassify.R`, `dump_registry.R`, the standalone driver `test_audit.R`
+  and the runnable example `vignette.R` (Box 1 of the manuscript). The
+  analysis scripts are self-contained script versions that `source()` each
+  other; they do not require the package to be installed.
 
 ## Reproducibility
 
-`data_build_v33.R` takes its data root from the `CIA_DATA_ROOT` environment
-variable or an explicit argument; no absolute path is hard-coded. The
-scripts write to `CIA_OUT` (default `../results`).
+The analysis scripts take their data root from the `CIA_DATA_ROOT`
+environment variable or an explicit argument; no absolute path is
+hard-coded. They write to `CIA_OUT` (default `../results`).
 
 ## Requirements
 

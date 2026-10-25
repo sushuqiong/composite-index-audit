@@ -1,5 +1,5 @@
-# reanalysis_cases_v33.R (PURE ASCII)
-# Stage 3 (v33): re-analysis of published model specifications on public NHANES
+# reanalysis_cases.R (PURE ASCII)
+# Stage 3 (v34): re-analysis of published model specifications on public NHANES
 # data, demonstrating what the audit reports for each.
 #
 #   Case 1  Lan et al., BMC Public Health 2025;25:2512 (DOI
@@ -29,11 +29,11 @@ options(survey.lonely.psu = "adjust")
 CODE_DIR <- Sys.getenv("CIA_CODE_DIR", unset = "")
 OUT      <- Sys.getenv("CIA_OUT", unset = "")
 if (!nzchar(CODE_DIR) || !nzchar(OUT))
-  stop("set CIA_CODE_DIR and CIA_OUT before running reanalysis_cases_v33.R")
-source(file.path(CODE_DIR, "index_registry_v33.R"))
-source(file.path(CODE_DIR, "algebra_audit_v33.R"))
-source(file.path(CODE_DIR, "model_evaluation_v33.R"))
-source(file.path(CODE_DIR, "data_build_v33.R"))
+  stop("set CIA_CODE_DIR and CIA_OUT before running reanalysis_cases.R")
+source(file.path(CODE_DIR, "index_registry.R"))
+source(file.path(CODE_DIR, "algebra_audit.R"))
+source(file.path(CODE_DIR, "model_evaluation.R"))
+source(file.path(CODE_DIR, "data_build.R"))
 
 exps <- product_expansions()
 rows <- list()
@@ -59,7 +59,7 @@ wald1 <- function(fit, term_formula) {
 }
 
 for (period in c("P", "L")) {
-  d <- build_period_v33(period)
+  d <- build_period(period)
 
   # ---------------- Case 1: LAP with waist + TG (Lan 2025 Model 3 core) ----
   f1 <- fit_frame(d, c("age", "sex", "waist_cm", "tg_mmol_L", "LAP"))
@@ -191,5 +191,5 @@ for (period in c("P", "L")) {
 res <- do.call(rbind, rows)
 
 print(res, row.names = FALSE)
-write.csv(res, file.path(OUT, "v33_reanalysis_cases.csv"), row.names = FALSE, na = "")
-cat("\n=== v33 reanalysis cases done ===\n")
+write.csv(res, file.path(OUT, "v34_reanalysis_cases.csv"), row.names = FALSE, na = "")
+cat("\n=== v34 reanalysis cases done ===\n")

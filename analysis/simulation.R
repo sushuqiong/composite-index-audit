@@ -1,4 +1,4 @@
-# simulation_v33.R (PURE ASCII)
+# simulation.R (PURE ASCII)
 # ADEMP-structured Monte Carlo study for CompositeIndexAudit.
 #
 # AIM
@@ -61,7 +61,7 @@ set.seed(SEED)
 OUT <- Sys.getenv("CIA_OUT", file.path("..", "results"))
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 CODE_DIR <- Sys.getenv("CIA_CODE_DIR", ".")
-source(file.path(CODE_DIR, "algebra_audit_v33.R"), local = TRUE)
+source(file.path(CODE_DIR, "algebra_audit.R"), local = TRUE)
 
 REP_IID    <- 1000L
 REP_STRESS <- 2000L
@@ -233,7 +233,7 @@ for (cell in cells) {
 }
 
 sim <- do.call(rbind, rows)
-write.csv(sim, file.path(OUT, "v33_simulation_cells.csv"), row.names = FALSE)
+write.csv(sim, file.path(OUT, "v34_simulation_cells.csv"), row.names = FALSE)
 
 # ---------------- verification assertions ----------------------------------
 disc <- sim[sim$cell == "stress_discordant_preprocessing", ]
@@ -265,4 +265,4 @@ stopifnot(
 cat("\nSIMULATION ASSERTIONS PASSED: 12 cells,",
     8 * REP_IID + 4 * REP_STRESS, "repetitions; verification and stress",
     "behave as registered.\n")
-cat("=== v33 simulation done ===\n")
+cat("=== v34 simulation done ===\n")

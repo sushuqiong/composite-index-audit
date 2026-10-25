@@ -80,7 +80,7 @@ audit_composite_index <- function(index_terms, embedded_terms,
   if (!exact) {
     status <- if (approximate) "approximate_collinearity" else "not_decomposable"
   } else if (is.na(rank_gain)) {
-    # v33 fix: residual is a fixed-length named vector over all_terms, so its
+    # v34 fix: residual is a fixed-length named vector over all_terms, so its
     # length is never zero. The symbolic question is whether every entry is
     # zero within tolerance (C = E). This makes the no-data branch
     # independent of the sample rank: audit_index_in_model(c(x=1,y=1),
@@ -120,7 +120,7 @@ audit_composite_index <- function(index_terms, embedded_terms,
 # [Z,E,C] and [Z,E,R] are linked by
 #   gamma_Z = beta_Z,  gamma_tk = beta_tk + e_k beta_C,  gamma_R = beta_C.
 # ---------------------------------------------------------------------------
-# v33: intercept is the additive constant of the registered index (for
+# v34: intercept is the additive constant of the registered index (for
 # example HOMA-IR carries -log(22.5) once on the log scale). It maps to the
 # model intercept: gamma_0 = beta_0 + intercept * beta_C.
 audit_index_in_model <- function(index_terms, embedded_terms, model_terms = embedded_terms,
@@ -180,8 +180,8 @@ design_space_audit <- function(data, tol = 1e-10) {
   xr <- stats::model.matrix(~ sex + log_age + log_bmi + metab, data = data)
   rank_of <- function(x) qr(x, tol = tol)$rank
   fit_check <- tryCatch({
-    m1 <- stats::glm(dx ~ sex + log_age + log_bmi + GLM7, data = data, family = binomial())
-    m2 <- stats::glm(dx ~ sex + log_age + log_bmi + metab, data = data, family = binomial())
+    m1 <- stats::glm(dx ~ sex + log_age + log_bmi + GLM7, data = data, family = stats::binomial())
+    m2 <- stats::glm(dx ~ sex + log_age + log_bmi + metab, data = data, family = stats::binomial())
     max(abs(stats::predict(m1, type = "link") - stats::predict(m2, type = "link")), na.rm = TRUE)
   }, error = function(e) NA_real_)
   standardized_kappa <- function(x) {
@@ -369,7 +369,7 @@ run_unit_scaling_sensitivity <- function(development_data, later_data,
     correctly_reparameterized_later_metrics = as.list(refit_metrics),
     incorrectly_transferred_later_metrics = as.list(bad_metrics),
     incorrect_transfer_lp_shift = unique(round(lp_l_bad - lp_l_original, 12))[[1]],
-    # v33: return the two later-period linear predictors so the caller can
+    # v34: return the two later-period linear predictors so the caller can
     # quantify decision consequences (threshold_shift_table) rather than only
     # calibration metrics.
     lp_l_correct = lp_l_original,

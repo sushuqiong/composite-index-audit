@@ -1,16 +1,16 @@
-# test_audit_v33.R -- synthetic-data locks for the v33 symbolic layer.
+# test_audit.R -- synthetic-data locks for the v34 symbolic layer.
 # Covers: four-class registry counts, reducible_to_interaction classification,
 # LAP main-effect shift (-65/+7), CVAI sex-segmented expansion, coefficient
-# maps K, rank bookkeeping, the v31 GLM7 behaviour, and the v33 regressions:
+# maps K, rank bookkeeping, the v31 GLM7 behaviour, and the v34 regressions:
 # no-data classification, term identity (transform / log base / units),
 # intercept mapping, and the record-by-record registry concordance audit.
 # Pure base R; ASCII only.
 
-source("algebra_audit_v33.R")
-source("term_identity_v33.R")
-source("index_registry_v33.R")
-source("public_api_v33.R")
-source("registry_audit_v33.R")
+source("algebra_audit.R")
+source("term_identity.R")
+source("index_registry.R")
+source("public_api.R")
+source("registry_audit.R")
 
 tol <- 1e-8
 pass <- function(msg) cat("[PASS]", msg, "\n")
@@ -54,7 +54,7 @@ d$log_hdl_mg <- log(d$hdl_mmol_L * 38.67)
 d$METS_IR <- d$log_mets_sum * d$BMI / d$log_hdl_mg
 
 # --- 1. registry four-class counts ------------------------------------------
-reg <- v33_registry()
+reg <- registry_v34()
 check(nrow(reg) == 25L, "registry has 25 rows")
 check(all(c("reference_class", "added_columns") %in% names(reg)),
       "registry carries the reference-class and added-columns fields")
@@ -167,7 +167,7 @@ z0 <- audit_index_in_model(
 check(z0$classification == "rank_preserving_exact",
       "TyG against its own components stays rank_preserving_exact")
 
-# --- 7. v33 regression: no-data classification --------------------------------
+# --- 7. v34 regression: no-data classification --------------------------------
 # v32 classified by length(residual) == 0, which is never true for the
 # fixed-length residual vector, so the simplest fully redundant index was
 # misclassified as rank_adding_exact when data was NULL.
@@ -179,7 +179,7 @@ z_nodata2 <- audit_index_in_model(c(x = 1, y = 1, z = 1), c(x = 1, y = 1),
 check(z_nodata2$classification == "rank_adding_exact",
       "no-data branch: a genuine residual still gives rank_adding_exact")
 
-# --- 8. v33 regression: term identity -----------------------------------------
+# --- 8. v34 regression: term identity -----------------------------------------
 k1 <- make_term_key("TG", "log10", 10, "mmol/L")
 check(term_key_compare(k1, make_term_key("TG", "log10", 10, "mmol/L")) == "match",
       "term key: identical five fields match")
@@ -205,7 +205,7 @@ a3 <- suppressWarnings(audit_registered_index("demo_logx", c(inv_x = "x|identity
 check(a3$classification == "rank_adding_exact",
       "keyed API: a reciprocally transformed column cannot pass as log(x)")
 
-# --- 9. v33 regression: intercept enters the coefficient map ------------------
+# --- 9. v34 regression: intercept enters the coefficient map ------------------
 register_index("demo_const", "1.5 + log(x)", units = c(x = "mg/dL"),
                overwrite = TRUE)
 a4 <- suppressWarnings(audit_registered_index("demo_const", c(x = "x|log|e|mg/dL|-")))
@@ -216,14 +216,14 @@ zl <- audit_index_in_model(c(lx = 1), c(lx = 1), intercept = -log(22.5))
 check(zl$coefficient_map["(Intercept)", "C"] == -log(22.5),
       "HOMA-IR log-scale constant -ln(22.5) maps to the intercept")
 
-# --- 10. v33 regression: zero-variance columns do not crash the audit ---------
+# --- 10. v34 regression: zero-variance columns do not crash the audit ---------
 dz <- data.frame(x = rep(1, 100), y = rnorm(100))
 zz <- audit_index_in_model(c(x = 1, y = 1), c(x = 1), data = dz)
 check(zz$classification %in% c("rank_preserving_exact", "rank_adding_exact") &&
         any(grepl("zero-variance", zz$failure_states)),
       "zero-variance column is flagged, not fatal")
 
-# --- 11. v33 regression: pre-existing interaction leaves no rank to add -------
+# --- 11. v34 regression: pre-existing interaction leaves no rank to add -------
 d_int <- data.frame(sex = d$sex, waist_cm = d$waist_cm,
                     tg_mmol_L = d$tg_mmol_L)
 d_int$sexFemale <- as.numeric(d_int$sex == "Female")
@@ -239,11 +239,11 @@ check(a_int$classification == "reducible_to_interaction" &&
         a_int$numerical_diagnostics$rank_gain == 0L,
       "base already holding the interaction bundle: LAP adds no rank")
 
-# --- 12. v33: record-by-record registry concordance ---------------------------
+# --- 12. v34: record-by-record registry concordance ---------------------------
 cc <- audit_registry_concordance(data = NULL, tol = tol)
 check(nrow(cc) == 26L, "concordance audit covers all 26 records")
 check(all(cc$concordant),
       paste("every record's derived classification equals the reference label;",
             "mismatches:", paste(cc$record[!cc$concordant], collapse = ", ")))
 
-cat("=== all v33 audit tests passed ===\n")
+cat("=== all v34 audit tests passed ===\n")

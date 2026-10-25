@@ -1,9 +1,9 @@
-# data_build_v33.R (PURE ASCII)
-# Canonical NHANES P/L loader for every v33 script.  The body of
-# build_period_v33() is byte-identical to the copy inside
-# build_results_v33.R; the package audit checks the two copies match.
+# data_build.R (PURE ASCII)
+# Canonical NHANES P/L loader for every v34 script.  The body of
+# build_period() is byte-identical to the copy inside
+# build_results.R; the package audit checks the two copies match.
 #
-# v33: no absolute paths are hard-coded.  Point CIA_DATA_ROOT at the
+# v34: no absolute paths are hard-coded.  Point CIA_DATA_ROOT at the
 # directory containing the official NHANES XPT files before sourcing; the
 # loader fails closed if the variable is unset.
 
@@ -24,7 +24,7 @@ read_unique <- function(file, cols) {
   x[, cols, drop = FALSE]
 }
 
-build_period_v33 <- function(period = c("P", "L")) {
+build_period <- function(period = c("P", "L")) {
   period <- match.arg(period)
   p <- if (period == "P") {
     list(

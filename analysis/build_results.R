@@ -1,11 +1,11 @@
-# build_results_v33.R  (PURE ASCII)
-# v33 single source of truth for every NHANES number in the manuscript.
+# build_results.R  (PURE ASCII)
+# v34 single source of truth for every NHANES number in the manuscript.
 #
 # WHAT CHANGED FROM v32 (see the manuscript's revision notes)
 #   1. A failed augmented fit is NO LONGER folded into "aliased".  In v32,
 #      eval_candidate() set lp1 = lp0 whenever the augmented fit errored OR
 #      the score column was dropped as aliased, which made every structural
-#      zero deterministic by construction.  In v33 a failed fit returns
+#      zero deterministic by construction.  In v34 a failed fit returns
 #      status = "fit_failed" and is excluded from the structural-zero count;
 #      a converged fit with an aliased score column builds lp1 from the
 #      ESTIMABLE columns of the augmented fit itself, and the zero is
@@ -24,7 +24,7 @@
 #      concordance audit, and the decision-threshold shift table.
 #
 # Paths come from the environment and fail closed:
-#   CIA_CODE_DIR   directory holding the v33 .R sources
+#   CIA_CODE_DIR   directory holding the v34 .R sources
 #   CIA_DATA_ROOT  directory holding the official NHANES XPT files
 #   CIA_OUT        output directory for CSV / RDS
 #   CIA_BOOTSTRAP  replicate count (default 1000; set 50 for a debug run)
@@ -40,7 +40,7 @@ options(survey.lonely.psu = "adjust")
 
 need_env <- function(nm) {
   v <- Sys.getenv(nm, unset = "")
-  if (!nzchar(v)) stop("set ", nm, " before running build_results_v33.R")
+  if (!nzchar(v)) stop("set ", nm, " before running build_results.R")
   v
 }
 CODE_DIR  <- need_env("CIA_CODE_DIR")
@@ -51,9 +51,9 @@ SEED      <- 20261023L
 dir.create(OUT, recursive = TRUE, showWarnings = FALSE)
 if (!dir.exists(DATA_ROOT)) stop("CIA_DATA_ROOT does not exist: ", DATA_ROOT)
 
-for (f in c("index_registry_v33.R", "model_evaluation_v33.R",
-            "algebra_audit_v33.R", "term_identity_v33.R",
-            "public_api_v33.R", "registry_audit_v33.R"))
+for (f in c("index_registry.R", "model_evaluation.R",
+            "algebra_audit.R", "term_identity.R",
+            "public_api.R", "registry_audit.R"))
   source(file.path(CODE_DIR, f), local = TRUE)
 
 registry <- v28_registry()
@@ -94,8 +94,8 @@ read_unique <- function(file, cols) {
   x[, cols, drop = FALSE]
 }
 
-# build_period_v33() is byte-identical to the copy in data_build_v33.R.
-build_period_v33 <- function(period = c("P", "L")) {
+# build_period() is byte-identical to the copy in data_build.R.
+build_period <- function(period = c("P", "L")) {
   period <- match.arg(period)
   p <- if (period == "P") {
     list(
@@ -156,8 +156,8 @@ build_period_v33 <- function(period = c("P", "L")) {
 }
 
 cat("building P and L datasets...\n")
-Pd <- build_period_v33("P")
-Ld <- build_period_v33("L")
+Pd <- build_period("P")
+Ld <- build_period("L")
 
 RESULTS <- list()   # the single nested object everything is exported from
 
@@ -171,7 +171,7 @@ flow <- do.call(rbind, lapply(list(Pd, Ld), function(d) {
 }))
 print(flow)
 RESULTS$flow <- flow
-write.csv(flow, file.path(OUT, "v33_flow.csv"), row.names = FALSE)
+write.csv(flow, file.path(OUT, "v34_flow.csv"), row.names = FALSE)
 
 make_des <- function(d) {
   dd <- d; dd$design_support <- TRUE
@@ -188,7 +188,7 @@ design_df <- data.frame(period = c("P", "L"),
                         stringsAsFactors = FALSE)
 print(design_df)
 RESULTS$design_df <- design_df
-write.csv(design_df, file.path(OUT, "v33_design_df.csv"), row.names = FALSE)
+write.csv(design_df, file.path(OUT, "v34_design_df.csv"), row.names = FALSE)
 
 # Weighted period statistics (replaces the carried-over v31 table).
 period_one <- function(des, period_label) {
@@ -208,7 +208,7 @@ period_one <- function(des, period_label) {
 period_stats <- rbind(period_one(P_full, "P"), period_one(L_full, "L"))
 print(period_stats)
 RESULTS$period_stats <- period_stats
-write.csv(period_stats, file.path(OUT, "v33_period_stats.csv"),
+write.csv(period_stats, file.path(OUT, "v34_period_stats.csv"),
           row.names = FALSE)
 
 # --------------- shared replicate designs, keyed by domain ----------------
@@ -256,7 +256,7 @@ sub_des <- function(des, index, base_terms, scale_override = NULL) {
 }
 
 # One contrast, evaluated once.
-# v33: a failed augmented fit is a FAILURE, not a structural zero.  When the
+# v34: a failed augmented fit is a FAILURE, not a structural zero.  When the
 # augmented fit converged but dropped the score column as aliased, lp1 is
 # built from the estimable columns of that augmented fit itself - a genuine
 # point of the augmented model space - and the structural zero is then
@@ -427,25 +427,40 @@ bh <- function(p) {
   out <- numeric(m); out[o] <- q; out
 }
 
+# v34: the primary reference distribution is t with the later-period design
+# degrees of freedom (df = 15 for period L); the z reference is reported
+# alongside as a sensitivity analysis.  Benjamini-Hochberg is applied to the
+# SAME p that the table displays as primary, and no rounding is applied:
+# v33 rounded q to 6 decimals, which printed values below 5e-7 as 0 and made
+# the corrected value look smaller than the raw one.
+bh_columns <- c("arm", "index", "audit_class_registry", "audit_class_fitted_base",
+                "model_scale", "P_n", "L_n",
+                "L_delta_auc", "L_lo", "L_hi",
+                "wald_p_t15", "bh_q", "wald_p", "bh_q_z",
+                "p_reference", "monotone_ok",
+                "family", "family_id", "family_m")
+
 bh_table <- function(a, family_label, family_id) {
-  testable <- a[a$status == "estimated" & is.finite(a$wald_p), , drop = FALSE]
+  testable <- a[a$status == "estimated" & is.finite(a$wald_p) & is.finite(a$wald_p_t15), , drop = FALSE]
   if (!nrow(testable)) return(NULL)
-  testable$bh_q <- round(bh(testable$wald_p), 6)
+  testable$bh_q   <- bh(testable$wald_p_t15)
+  testable$bh_q_z <- bh(testable$wald_p)
+  testable$p_reference <- "t, df = 15 (later-period design df); z reported as sensitivity"
+  testable$monotone_ok <-
+    all(testable$bh_q >= testable$wald_p_t15 - 1e-12) &&
+    all(testable$bh_q_z >= testable$wald_p - 1e-12)
+  stopifnot(testable$monotone_ok)
   testable$family <- family_label
   testable$family_id <- family_id
   testable$family_m <- nrow(testable)
-  testable[order(testable$wald_p),
-           c("arm", "index", "audit_class_registry", "audit_class_fitted_base",
-             "model_scale", "P_n", "L_n",
-             "L_delta_auc", "L_lo", "L_hi", "wald_p", "wald_p_t15", "bh_q",
-             "family", "family_id", "family_m")]
+  testable[order(testable$wald_p_t15), bh_columns]
 }
 
 # ------------------------------- Arm A ------------------------------------
 cat("\n=== Arm A: diabetes outcome, registry component models ===\n")
 armA <- run_arm("dx_diab", base_terms_for, "A_diabetes_registry", B = BREP)
 RESULTS$armA <- armA
-write.csv(armA, file.path(OUT, "v33_armA_diabetes_registry.csv"),
+write.csv(armA, file.path(OUT, "v34_armA_diabetes_registry.csv"),
           row.names = FALSE)
 
 # ------------------ Arm B on ONE shared domain ----------------------------
@@ -484,7 +499,7 @@ stopifnot(nrow(domB$P$df) >= 100, nrow(domB$L$df) >= 100)
 armB <- run_arm("dx_diab", minimal_base, "B_diabetes_minimalbase", B = BREP,
                 domain_override = domB)
 RESULTS$armB <- armB
-write.csv(armB, file.path(OUT, "v33_armB_diabetes_minimalbase.csv"),
+write.csv(armB, file.path(OUT, "v34_armB_diabetes_minimalbase.csv"),
           row.names = FALSE)
 # The shared-domain promise, checked in the output itself.
 stopifnot(length(unique(armB$P_n)) == 1L, length(unique(armB$L_n)) == 1L)
@@ -522,7 +537,7 @@ for (spec in b0_specs) {
 }
 armB0 <- do.call(rbind, b0_rows)
 RESULTS$armB0 <- armB0
-write.csv(armB0, file.path(OUT, "v33_armB0_single_components.csv"),
+write.csv(armB0, file.path(OUT, "v34_armB0_single_components.csv"),
           row.names = FALSE)
 
 # ---------------- testable predictions ------------------------------------
@@ -575,14 +590,14 @@ testable <- do.call(rbind, pred_rows)
 print(testable, row.names = FALSE)
 stopifnot(all(testable$passed))
 RESULTS$testable_predictions <- testable
-write.csv(testable, file.path(OUT, "v33_testable_predictions.csv"),
+write.csv(testable, file.path(OUT, "v34_testable_predictions.csv"),
           row.names = FALSE)
 
 # ------------------------------- Arm G ------------------------------------
 cat("\n=== Arm G: gallstone worked example, registry component models ===\n")
 armG <- run_arm("dx_gall", base_terms_for, "G_gallstone_registry", B = BREP)
 RESULTS$armG <- armG
-write.csv(armG, file.path(OUT, "v33_armG_gallstone_registry.csv"),
+write.csv(armG, file.path(OUT, "v34_armG_gallstone_registry.csv"),
           row.names = FALSE)
 
 # ------------------------------- Arm C ------------------------------------
@@ -592,7 +607,7 @@ armC <- run_arm("dx_gall", base_terms_for, "C_gallstone_native_scale",
                 scale_overrides = list(NLR = "native", CAR = "native"),
                 B = BREP)
 RESULTS$armC <- armC
-write.csv(armC, file.path(OUT, "v33_armC_scale_pairing.csv"),
+write.csv(armC, file.path(OUT, "v34_armC_scale_pairing.csv"),
           row.names = FALSE)
 
 # ------------------------------- Arm F ------------------------------------
@@ -604,7 +619,7 @@ armF_gall <- run_arm("dx_gall", metab_base, "F_gallstone_metab_base",
                      only = "GLM7", B = BREP)
 armF <- rbind(armF_diab, armF_gall)
 RESULTS$armF <- armF
-write.csv(armF, file.path(OUT, "v33_armF_glm7_metab_base.csv"),
+write.csv(armF, file.path(OUT, "v34_armF_glm7_metab_base.csv"),
           row.names = FALSE)
 
 # ------------------ GLM7 dual-registration table --------------------------
@@ -622,7 +637,7 @@ dual$audit_class_for_record <- ifelse(dual$record == "GLM7",
                                       "rank_adding_exact",
                                       "rank_preserving_exact")
 RESULTS$glm7_dual_registration <- dual
-write.csv(dual, file.path(OUT, "v33_glm7_dual_registration.csv"),
+write.csv(dual, file.path(OUT, "v34_glm7_dual_registration.csv"),
           row.names = FALSE)
 
 # ------------------ audit classes (symbolic + numeric) --------------------
@@ -649,7 +664,7 @@ for (nm in names(CONFIGS)) {
 AUDIT <- do.call(rbind, audit_rows)
 print(AUDIT, row.names = FALSE)
 RESULTS$glm7_audit_classes <- AUDIT
-write.csv(AUDIT, file.path(OUT, "v33_glm7_audit_classes.csv"),
+write.csv(AUDIT, file.path(OUT, "v34_glm7_audit_classes.csv"),
           row.names = FALSE)
 
 # ------------- registry concordance audit (26 records) --------------------
@@ -662,7 +677,7 @@ print(concordance[, c("record", "expected_class", "actual_class",
                       "concordant")], row.names = FALSE)
 stopifnot(nrow(concordance) == 26L, all(concordance$concordant))
 RESULTS$registry_concordance <- concordance
-write.csv(concordance, file.path(OUT, "v33_registry_audit_concordance.csv"),
+write.csv(concordance, file.path(OUT, "v34_registry_audit_concordance.csv"),
           row.names = FALSE)
 
 # ----------------------- Arm D aliased exhibit ----------------------------
@@ -697,7 +712,7 @@ for (index in c("NLR", "AIP", "SII")) {
 ex <- do.call(rbind, ex_rows)
 print(ex)
 RESULTS$armD <- ex
-write.csv(ex, file.path(OUT, "v33_armD_aliased_exhibit.csv"),
+write.csv(ex, file.path(OUT, "v34_armD_aliased_exhibit.csv"),
           row.names = FALSE)
 
 # ------------------------- unit scaling -----------------------------------
@@ -737,7 +752,7 @@ us_tab <- data.frame(
   stringsAsFactors = FALSE)
 print(us_tab, row.names = FALSE)
 RESULTS$unit_scaling_table <- us_tab
-write.csv(us_tab, file.path(OUT, "v33_unit_scaling.csv"), row.names = FALSE)
+write.csv(us_tab, file.path(OUT, "v34_unit_scaling.csv"), row.names = FALSE)
 
 # ------------- decision consequences of the mishandled transfer ------------
 # The AUC is identical under the constant shift; the decisions are not.
@@ -748,17 +763,17 @@ ts_tab <- threshold_shift_table(
   thresholds = c(0.05, 0.10, 0.15, 0.20))
 print(ts_tab, row.names = FALSE)
 RESULTS$threshold_shift <- ts_tab
-write.csv(ts_tab, file.path(OUT, "v33_threshold_shift.csv"),
+write.csv(ts_tab, file.path(OUT, "v34_threshold_shift.csv"),
           row.names = FALSE)
 ts_curve <- threshold_shift_table(
   L_us, us$lp_l_correct, us$lp_l_incorrect_transfer,
   outcome = "dx_diab", weight = "weight",
   thresholds = round(seq(0.01, 0.50, length.out = 100), 4))
-write.csv(ts_curve, file.path(OUT, "v33_threshold_shift_curve.csv"),
+write.csv(ts_curve, file.path(OUT, "v34_threshold_shift_curve.csv"),
           row.names = FALSE)
 
 # ------------------------- BH corrections ---------------------------------
-# Families are declared in v33_multiplicity_families.csv; the table below is
+# Families are declared in v34_multiplicity_families.csv; the table below is
 # built from the arm results, and every family statement in the manuscript
 # cites one of these family_ids.
 bhA  <- bh_table(armA, "Arm A registry-base estimable contrasts (10 + GLM7)",
@@ -766,17 +781,20 @@ bhA  <- bh_table(armA, "Arm A registry-base estimable contrasts (10 + GLM7)",
 bhB3 <- bh_table(armB[armB$index %in% c("TyG", "TyG_BMI", "GLM7"),
                       , drop = FALSE],
                  "Arm B declared primary family", "F_primary3")
-armB_all <- armB[armB$status == "estimated" & is.finite(armB$wald_p),
+armB_all <- armB[armB$status == "estimated" & is.finite(armB$wald_p) & is.finite(armB$wald_p_t15),
                  , drop = FALSE]
-armB_all$bh_q <- round(bh(armB_all$wald_p), 6)
+armB_all$bh_q   <- bh(armB_all$wald_p_t15)
+armB_all$bh_q_z <- bh(armB_all$wald_p)
+armB_all$p_reference <-
+  "t, df = 15 (later-period design df); z reported as sensitivity"
+armB_all$monotone_ok <-
+  all(armB_all$bh_q >= armB_all$wald_p_t15 - 1e-12) &&
+  all(armB_all$bh_q_z >= armB_all$wald_p - 1e-12)
+stopifnot(armB_all$monotone_ok)
 armB_all$family <- "Arm B all evaluated contrasts (sensitivity family)"
 armB_all$family_id <- "F_armB_24"
 armB_all$family_m <- nrow(armB_all)
-armB_all <- armB_all[order(armB_all$wald_p),
-  c("arm", "index", "audit_class_registry", "audit_class_fitted_base",
-    "model_scale", "P_n", "L_n",
-    "L_delta_auc", "L_lo", "L_hi", "wald_p", "wald_p_t15", "bh_q",
-    "family", "family_id", "family_m")]
+armB_all <- armB_all[order(armB_all$wald_p_t15), bh_columns]
 bhG  <- bh_table(armG, "Gallstone registry-base estimable contrasts",
                  "F_gallstone")
 bhC  <- bh_table(armC, "Scale-pairing family", "F_scale2")
@@ -784,7 +802,7 @@ BH <- do.call(rbind, Filter(Negate(is.null),
                             list(bhA, bhB3, armB_all, bhG, bhC)))
 print(BH, row.names = FALSE, digits = 4)
 RESULTS$bh <- BH
-write.csv(BH, file.path(OUT, "v33_bh_all.csv"), row.names = FALSE)
+write.csv(BH, file.path(OUT, "v34_bh_all.csv"), row.names = FALSE)
 
 # ------------------- multiplicity family declaration -----------------------
 families <- data.frame(
@@ -811,7 +829,7 @@ families <- data.frame(
   stringsAsFactors = FALSE)
 print(families[, c("family_id", "m")], row.names = FALSE)
 RESULTS$multiplicity_families <- families
-write.csv(families, file.path(OUT, "v33_multiplicity_families.csv"),
+write.csv(families, file.path(OUT, "v34_multiplicity_families.csv"),
           row.names = FALSE)
 
 # ------------------------- record flow -------------------------------------
@@ -845,11 +863,11 @@ stopifnot(
   sum(record_flow$reference_class == "reducible_to_interaction") == 5L,
   sum(record_flow$reference_class == "outside_supported_class") == 5L)
 RESULTS$record_flow <- record_flow
-write.csv(record_flow, file.path(OUT, "v33_record_flow.csv"),
+write.csv(record_flow, file.path(OUT, "v34_record_flow.csv"),
           row.names = FALSE)
 
 # ---------------------- consistency assertions ----------------------------
-# v33: Arm A (per-index domain) and Arm B (shared 24-index domain) no longer
+# v34: Arm A (per-index domain) and Arm B (shared 24-index domain) no longer
 # evaluate GLM7 on the same rows, so the v32 byte-identity between the two
 # arms is relaxed by design; what MUST still hold is that every contrast is
 # internally consistent, the dual-registration table is assembled from the
@@ -873,5 +891,5 @@ stopifnot(
 cat("\nASSERTIONS PASSED: one contrast, one number, one interval per table;\n")
 cat("the structural zeros are verified measurements, not assignments.\n")
 
-saveRDS(RESULTS, file.path(OUT, "v33_results.rds"))
-cat("\n=== v33 unified results done ===\n")
+saveRDS(RESULTS, file.path(OUT, "v34_results.rds"))
+cat("\n=== v34 unified results done ===\n")

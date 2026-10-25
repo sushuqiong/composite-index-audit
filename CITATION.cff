@@ -1,6 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "CompositeIndexAudit"
+version: "0.34.0"
 abstract: "Pre-fitting algebraic classification of composite indices entered alongside their own components."
 type: software
 license: MIT

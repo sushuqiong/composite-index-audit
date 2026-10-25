@@ -1,9 +1,10 @@
 {
   "title": "CompositeIndexAudit: pre-fitting algebraic classification of composite indices",
-  "description": "R sources for the pre-fitting algebraic classification of composite indices entered alongside their own components, with the frozen index registry, unit tests, the ADEMP simulation driver and the NHANES demonstration pipeline.",
+  "description": "R package for the pre-fitting algebraic classification of composite indices entered alongside their own components, with the frozen index registry, a testthat suite, the ADEMP simulation driver and the NHANES demonstration pipeline.",
   "license": "MIT",
   "upload_type": "software",
   "access_right": "open",
+  "version": "0.34.0",
   "creators": [
     {"name": "Su, Shuqiong", "affiliation": "Guangxi Medical University Cancer Hospital"},
     {"name": "Yang, Shiyao", "affiliation": "Guangxi Medical University Cancer Hospital"},

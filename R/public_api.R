@@ -85,6 +85,24 @@
   "UNSUPPORTED"
 }
 
+
+#' Parse a composite-index expression into monomials
+#'
+#' A deliberately small, honest grammar: column names, numeric constants,
+#' \code{+}, \code{-}, \code{*} and division by a \emph{constant}, and
+#' \code{log()} or \code{log10()} applied to a single column at the additive
+#' top level.  Anything else (powers, square roots, division by a column, a
+#' logarithm of a sum) is reported as \code{"unsupported"} rather than being
+#' approximated, because an approximation would silently change the
+#' classification.
+#'
+#' @param expr An R expression or a character string holding one.
+#' @return A list with \code{status}, \code{expression}, \code{intercept},
+#'   \code{linear}, \code{products}, \code{logs} and \code{log_bases}.
+#' @export
+#' @examples
+#' parse_index_expression("log(tg) + log(glucose) - log(2)")
+#' parse_index_expression("waist / (BMI^(2/3))")$status
 parse_index_expression <- function(expr) {
   e <- if (is.character(expr)) parse(text = expr)[[1]] else substitute(expr)
   monos <- .v32_walk(e)
@@ -122,6 +140,24 @@ parse_index_expression <- function(expr) {
 # ---------------------------------------------------------------------------
 .v32_user_registry <- new.env()
 
+
+#' Register a composite index at runtime
+#'
+#' Stores a parsed expression under a name so that
+#' \code{\link{audit_registered_index}} and \code{\link{audit_fit}} can use it
+#' without the caller re-transcribing coefficients.
+#'
+#' @param name Character scalar, the index name.
+#' @param expression An R expression or character string.
+#' @param units Optional named character vector of units, one per component
+#'   column.  Supplying them is what lets the term-identity layer distinguish
+#'   \code{log10(x)} from \code{ln(x)} from \code{x}.
+#' @param overwrite Logical; allow replacing an existing registration.
+#' @return The parsed index, invisibly.
+#' @export
+#' @examples
+#' register_index("my_ratio", "log(tg_mmol_L) - log(hdl_mmol_L)",
+#'                units = c(tg_mmol_L = "mmol/L", hdl_mmol_L = "mmol/L"))
 register_index <- function(name, expression, units = character(0),
                            overwrite = FALSE) {
   stopifnot(is.character(name), length(name) == 1L, nzchar(name))
@@ -140,16 +176,38 @@ register_index <- function(name, expression, units = character(0),
 
 # Dispatch one registered (or built-in) index to the right audit layer.
 #
-# v33: term identity is carried through the dispatch.  model_terms may be
+# v34: term identity is carried through the dispatch.  model_terms may be
 #   - a plain character vector of column names (legacy): each name becomes a
 #     bare key with undeclared transformation and units, and any reliance on
 #     it is reported as "unkeyed" in the output and by warning;
 #   - a NAMED character vector mapping data column name -> five-field term
-#     key (see term_identity_v33.R), e.g.
+#     key (see term_identity.R), e.g.
 #     c(tg_mmol_L = "TG|log10|10|mmol/L|-", glucose_mg_dL = "glucose|log10|10|mg/dL|-").
 # A term matches the model only when variable, transformation, log base and
 # encoding agree; declared units must agree as well.  log(x) therefore never
 # collapses onto x or 1/x, and log10 never silently equals ln.
+
+#' Audit a registered index against a stated base model
+#'
+#' This is the hand-transcribed entry point: the caller supplies the base model
+#' columns.  \code{\link{audit_fit}} does the same job by reading them off a
+#' fitted model object.
+#'
+#' @param name Character scalar, a registered index name.
+#' @param model_terms Character vector of base model columns, or a NAMED
+#'   character vector mapping column name to a five-field term key
+#'   \code{variable|transform|base|units|encoding}.  When unnamed, the audit
+#'   runs in bare-name mode and every comparison is reported as unkeyed.
+#' @param data Optional data frame for the numerical verification layer.
+#' @param tol Numerical tolerance for the algebraic comparisons.
+#' @return A list: \code{classification}, \code{coefficient_map},
+#'   \code{blocking_reason}, \code{residual_expression},
+#'   \code{numerical_diagnostics}, \code{failure_states}.
+#' @export
+#' @examples
+#' register_index("cia_demo_tyg", "log_tg_mg + log_glucose_mg")
+#' audit_registered_index("cia_demo_tyg",
+#'                        c("sex", "log_tg_mg", "log_glucose_mg"))$classification
 audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10) {
   parsed <- if (exists(name, envir = .v32_user_registry))
     get(name, envir = .v32_user_registry) else {
@@ -210,6 +268,23 @@ audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10) 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ---------------------------------------------------------------------------
+
+#' Recompute a stored index column from its registered expression
+#'
+#' Catches unit, scale and transcription mistakes: the stored column is
+#' recomputed from the raw components and compared element by element.
+#'
+#' @param data A data frame holding the index and its components.
+#' @param name Character scalar, the index (column) name.
+#' @param expression Optional expression, used when \code{name} is not
+#'   registered.
+#' @param tol Maximum acceptable absolute error.
+#' @return A list with \code{max_abs_error}, \code{ok} and \code{tolerance}.
+#' @export
+#' @examples
+#' d <- data.frame(tg = c(1.2, 2.3), glu = c(4.5, 5.1))
+#' d$TyG <- log(d$tg) + log(d$glu)
+#' verify_index_column(d, "TyG", expression = "log(tg) + log(glu)")
 verify_index_column <- function(data, name, expression = NULL, tol = 1e-8) {
   if (!name %in% names(data)) stop("column not in data: ", name)
   parsed <- if (!is.null(expression)) parse_index_expression(expression)
@@ -236,6 +311,21 @@ verify_index_column <- function(data, name, expression = NULL, tol = 1e-8) {
 }
 
 # ---------------------------------------------------------------------------
+
+#' Rescale coefficients between natural-log and log10 bases
+#'
+#' \code{log10(x) = ln(x) / ln(10)}, so the two columns are not equal
+#' elementwise but span the same one-dimensional space.  A coefficient fitted
+#' against one basis is rescaled to be used against the other.
+#'
+#' @param terms Named numeric vector of coefficients.
+#' @param from Basis the coefficients were fitted against, \code{"ln"} or
+#'   \code{"log10"}.
+#' @param to Basis required.
+#' @return The rescaled coefficient vector.
+#' @export
+#' @examples
+#' normalize_log_base(c(log_tg = 0.7), from = "ln", to = "log10")
 normalize_log_base <- function(terms, from = c("ln", "log10"), to = c("ln", "log10")) {
   from <- match.arg(from); to <- match.arg(to)
   stopifnot(is.numeric(terms), !is.null(names(terms)))

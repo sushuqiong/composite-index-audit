@@ -1,8 +1,8 @@
-# vignette_v33.R  (PURE ASCII)  -  runs in a clean session without NHANES data
+# vignette.R  (PURE ASCII)  -  runs in a clean session without NHANES data
 #
-# Box 1 of the v33 manuscript, verbatim and self-contained: the example builds
+# Box 1 of the v34 manuscript, verbatim and self-contained: the example builds
 # its own synthetic data, so it runs from a fresh directory with
-#   Rscript vignette_v33.R
+#   Rscript vignette.R
 # Ten minutes, four audit classes, the coefficient map, the aliased
 # coefficient a rank-preserving index produces when fitted anyway, the
 # no-data audit, the keyed term identity, and the public API
@@ -17,10 +17,10 @@
 #   verify_index_column flags the deliberately miss-scaled column
 #   normalize_log_base rescales by ln(10) = 2.302585
 
-source("index_registry_v33.R")
-source("algebra_audit_v33.R")
-source("term_identity_v33.R")
-source("public_api_v33.R")
+source("index_registry.R")
+source("algebra_audit.R")
+source("term_identity.R")
+source("public_api.R")
 
 set.seed(20261023); n <- 1500
 d <- data.frame(
@@ -37,14 +37,14 @@ d$TyG <- log(d$tg_mmol_L * 88.57 * d$glucose_mg_dL / 2)          # ln(TG*G/2)
 # metab is the worked-example residual of GLM7 = metab + log10(age) +
 # log10(BMI).  In this synthetic example it is a stand-in built from two
 # measured columns; the registered GLM7 used on NHANES takes the five
-# published components (see index_registry_v33.R).
+# published components (see index_registry.R).
 d$metab <- log10(d$glucose_mg_dL) + log10(d$tg_mmol_L)
 d$log_age <- log10(d$age); d$log_bmi <- log10(d$BMI)
 d$GLM7 <- d$metab + d$log_age + d$log_bmi
 d$LAP <- ifelse(d$sex == "Male", d$waist_cm - 65, d$waist_cm - 58) * d$tg_mmol_L
 
 # --- the four classes --------------------------------------------------------
-reg <- v33_registry(); exps <- product_expansions()
+reg <- registry_v34(); exps <- product_expansions()
 
 a_tyg <- audit_index_in_model(c(log_tg_mg = 1, log_glucose_mg = 1),
                               c(log_tg_mg = 1, log_glucose_mg = 1), data = d)
@@ -63,7 +63,7 @@ stopifnot(identical(unname(classes),
   c("rank_preserving_exact", "rank_adding_exact",
     "reducible_to_interaction", "outside_supported_class")))
 
-# --- the no-data audit (v33): the verdict is symbolic, not a sample property -
+# --- the no-data audit (v34): the verdict is symbolic, not a sample property -
 # TyG against its own components, with no rows at all.
 a_nodata <- audit_index_in_model(c(log_tg_mg = 1, log_glucose_mg = 1),
                                  c(log_tg_mg = 1, log_glucose_mg = 1),
@@ -130,4 +130,4 @@ cf_10 <- normalize_log_base(cf_ln, from = "ln", to = "log10")
 print(round(cf_10, 4))                 # 1.8421, 2.5328 (x ln(10) = 2.302585)
 stopifnot(abs(cf_10[["log_tg_mg"]] - 0.8 * log(10)) < 1e-12)
 
-cat("=== vignette_v33 done: classes, no-data audit, keyed identity, map, aliasing and API verified ===\n")
+cat("=== vignette done: classes, no-data audit, keyed identity, map, aliasing and API verified ===\n")
