@@ -2,3 +2,5 @@
 ^\.Rproj\.user$
 ^pkg/CompositeIndexAudit/check$
 ^\.github$
+^\.zenodo\.json$
+^CITATION\.cff$

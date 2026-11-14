@@ -2,7 +2,7 @@
 # AUC is calculated from linear-predictor ranks. Brier and calibration use
 # inverse-logit probabilities. Every paired difference uses the same replicate.
 #
-# v34 addition: threshold_shift_table() quantifies what a mishandled unit
+# Decision-analysis addition: threshold_shift_table() quantifies what a mishandled unit
 # conversion does to DECISIONS, not to ranking: at a fixed risk threshold the
 # number flagged high-risk and the number of true cases missed move, while
 # the AUC does not. This is the decision-analytic consequence Figure 4 shows.
@@ -568,6 +568,8 @@ run_glm7_example <- function(development_data, validation_data, ...) {
 #   flagged        predicted risk >= t (referred / treated as high risk)
 #   cases_missed   true cases with predicted risk < t
 # The AUC is identical for the two predictors; the decision counts are not.
+# Net benefit is emitted on both the unweighted rows and the weighted domain,
+# with the domain n and case count carried alongside to prevent denominator drift.
 # ---------------------------------------------------------------------------
 threshold_shift_table <- function(data, lp_correct, lp_bad, outcome = "dx",
                                   weight = "weight",
@@ -591,6 +593,17 @@ threshold_shift_table <- function(data, lp_correct, lp_bad, outcome = "dx",
       w_cases_missed_bad = sum(w[y == 1 & !fb]),
       ppv_correct = if (any(fc)) sum(w[fc & y == 1]) / sum(w[fc]) else NA_real_,
       ppv_bad = if (any(fb)) sum(w[fb & y == 1]) / sum(w[fb]) else NA_real_,
+      ppv_unweighted_correct = if (any(fc)) mean(y[fc] == 1) else NA_real_,
+      ppv_unweighted_bad = if (any(fb)) mean(y[fb] == 1) else NA_real_,
+      n_domain = length(y), n_cases = sum(y == 1),
+      nb_correct = (sum(y[fc] == 1) -
+                    sum(y[fc] == 0) * t / (1 - t)) / length(y),
+      nb_bad = (sum(y[fb] == 1) -
+                sum(y[fb] == 0) * t / (1 - t)) / length(y),
+      nb_weighted_correct = (sum(w[fc & y == 1]) -
+                             sum(w[fc & y == 0]) * t / (1 - t)) / sum(w),
+      nb_weighted_bad = (sum(w[fb & y == 1]) -
+                         sum(w[fb & y == 0]) * t / (1 - t)) / sum(w),
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, rows)

@@ -99,15 +99,10 @@ audit_composite_index <- function(index_terms, embedded_terms,
   # numeric check is a verification of the symbolic claim, never its proof.
   if (!exact) {
     status <- if (approximate) "approximate_collinearity" else "not_decomposable"
-  } else if (is.na(rank_gain)) {
-    # v34 fix: residual is a fixed-length named vector over all_terms, so its
-    # length is never zero. The symbolic question is whether every entry is
-    # zero within tolerance (C = E). This makes the no-data branch
-    # independent of the sample rank: audit_index_in_model(c(x=1,y=1),
-    # c(x=1,y=1), data = NULL) now returns rank_preserving_exact.
-    status <- if (all(abs(residual) <= tol)) "rank_preserving_exact" else "rank_adding_exact"
   } else {
-    status <- if (rank_gain == 0L) "rank_preserving_exact" else "rank_adding_exact"
+    # v35: classification is symbolic. Observed rank is a separate numerical
+    # diagnostic and can never turn a non-zero symbolic residual into zero.
+    status <- if (all(abs(residual) <= tol)) "rank_preserving_exact" else "rank_adding_exact"
   }
   warnings <- character()
   if (!embedded_match) warnings <- c(warnings, "embedded terms or coefficients do not match the index representation")
@@ -192,7 +187,18 @@ audit_index_in_model <- function(index_terms, embedded_terms, model_terms = embe
       "no embedded term of the index appears in the model with the same transformation, unit and scale"
     else "residual is outside the registered additive log-linear expression class"
   }
+  expected_rank_gain <- if (classification == "rank_preserving_exact") 0L else if (classification == "rank_adding_exact") 1L else NA_integer_
+  observed_rank_gain <- base$diagnostics$rank_gain
+  verification_status <- if (is.na(observed_rank_gain) || is.na(expected_rank_gain)) "not_run"
+    else if (observed_rank_gain == expected_rank_gain) "concordant"
+    else "sample_degenerate_or_rank_mismatch"
+  if (identical(verification_status, "sample_degenerate_or_rank_mismatch"))
+    failure_states <- unique(c(failure_states, "symbolic_numeric_rank_mismatch"))
   list(classification = classification,
+       symbolic_classification = classification,
+       expected_rank_gain = expected_rank_gain,
+       observed_rank_gain = observed_rank_gain,
+       verification_status = verification_status,
        coefficient_map = coefficient_map,
        blocking_reason = blocking_reason,
        residual_expression = if (base$decomposable)
@@ -372,10 +378,11 @@ audit_tolerance_grid <- function(index_terms, embedded_terms, model_terms = embe
 
 #' Audit a product-form index in a stated base model
 #'
-#' Product indices are handled by expanding them with the distributive law and
-#' then asking whether every expansion term is expressible from the base
-#' columns.  When it is, the index is a rank-one bundle of interactions and is
-#' a 1-df test, not \code{k} separate tests.
+#' Product indices are handled by expanding them with the distributive law,
+#' subtracting interaction columns already embedded in the base, and then asking
+#' whether every remaining expansion term is expressible from the base columns.
+#' A wholly embedded product is rank-preserving. Otherwise, supported new product
+#' columns form a fixed-ratio bundle and a 1-df test, not \code{k} separate tests.
 #'
 #' @param index Character scalar, the index name.
 #' @param model_terms Character vector of base model columns.
@@ -397,25 +404,30 @@ audit_product_in_model <- function(index, model_terms, expansion,
             is.list(expansion))
   const <- if (is.null(expansion$intercept)) 0 else as.numeric(expansion$intercept)
   linear <- expansion$linear
-  products <- expansion$products
+  all_products <- expansion$products
   if (is.null(linear)) linear <- setNames(numeric(0), character(0))
-  if (is.null(products)) products <- setNames(numeric(0), character(0))
-  stopifnot(is.numeric(linear), is.numeric(products))
-  if (anyDuplicated(names(linear)) || anyDuplicated(names(products)))
+  if (is.null(all_products)) all_products <- setNames(numeric(0), character(0))
+  stopifnot(is.numeric(linear), is.numeric(all_products))
+  if (anyDuplicated(names(linear)) || anyDuplicated(names(all_products)))
     stop("expansion term names must be unique")
-  # model.matrix-style column availability: factor sex contributes sexFemale.
+
+  # v35: interactions already in W are embedded, not new directions.
   model_cols <- ifelse(model_terms == "sex", "sexFemale", model_terms)
   available <- union(model_terms, model_cols)
   split_product <- function(nm) strsplit(nm, ":", fixed = TRUE)[[1]]
   unsupported_products <- character()
-  for (nm in names(products)) {
+  for (nm in names(all_products)) {
     parts <- split_product(nm)
-    if (length(parts) != 2L || !all(parts %in% available))
+    already_embedded <- nm %in% model_cols
+    if (!already_embedded && (length(parts) != 2L || !all(parts %in% available)))
       unsupported_products <- c(unsupported_products, nm)
   }
   unsupported_linear <- setdiff(names(linear), model_cols)
   reducible <- length(unsupported_products) == 0L && length(unsupported_linear) == 0L
-  classification <- if (reducible) "reducible_to_interaction" else "outside_supported_class"
+  products <- all_products[!(names(all_products) %in% model_cols), drop = FALSE]
+  classification <- if (!reducible) "outside_supported_class"
+    else if (!length(products)) "rank_preserving_exact"
+    else "reducible_to_interaction"
   blocking_reason <- if (reducible) NA_character_ else paste0(
     "expansion term(s) not expressible from the model columns: ",
     paste(c(unsupported_linear, unsupported_products), collapse = ", "))
@@ -430,12 +442,12 @@ audit_product_in_model <- function(index, model_terms, expansion,
     if (const != 0) K["(Intercept)", "C"] <- const
     for (j in model_cols) K[j, j] <- 1
     for (j in names(linear)) K[j, "C"] <- linear[[j]]
+    for (ik in intersect(names(all_products), model_cols))
+      K[ik, "C"] <- K[ik, "C"] + all_products[[ik]]
     for (ik in names(products)) K[ik, "C"] <- products[[ik]]
     coefficient_map <- K
   }
 
-  # Numerical verification layer (never the proof): rebuild C from the
-  # expansion on the supplied rows and compare the column spaces.
   identity_error <- NA_real_; rank_base <- NA_integer_
   rank_augmented <- NA_integer_; rank_interactions <- NA_integer_
   rank_gain <- NA_integer_; interaction_gain <- NA_integer_
@@ -454,14 +466,12 @@ audit_product_in_model <- function(index, model_terms, expansion,
       stats::as.formula(paste("~", paste(model_terms, collapse = " + "))),
       data = data)
     W <- W[, colnames(W) != "(Intercept)", drop = FALSE]
-    # The expansion can only be materialised when every term is expressible
-    # from the model columns; otherwise the audit stops at the boundary.
     if (reducible) {
       rebuilt <- rep(const, nrow(data))
       for (j in names(linear)) rebuilt <- rebuilt + linear[[j]] * column_of(j)
-      for (ik in names(products)) {
+      for (ik in names(all_products)) {
         parts <- split_product(ik)
-        rebuilt <- rebuilt + products[[ik]] * column_of(parts[1]) * column_of(parts[2])
+        rebuilt <- rebuilt + all_products[[ik]] * column_of(parts[1]) * column_of(parts[2])
       }
       identity_error <- suppressWarnings(max(abs(data[[index]] - rebuilt), na.rm = TRUE))
     }
@@ -480,8 +490,6 @@ audit_product_in_model <- function(index, model_terms, expansion,
         xi <- cbind(xb, Imat)
         rank_interactions <- rank_fun(xi)
         interaction_gain <- rank_interactions - rank_base
-        # C must lie (to tolerance) inside span[W, I]: the bundled column is a
-        # fixed combination of the interaction columns plus model columns.
         c_span_residual <- max(abs(qr.resid(qr(xi, tol = tol), data[[index]][keep])))
       } else if (reducible) {
         rank_interactions <- rank_base
@@ -494,17 +502,29 @@ audit_product_in_model <- function(index, model_terms, expansion,
   expansion_expression <- paste(c(
     if (const != 0) format(const, digits = 6),
     paste(format(linear, digits = 6), names(linear), sep = " x "),
-    paste(format(products, digits = 6), names(products), sep = " x ")), collapse = " + ")
+    paste(format(all_products, digits = 6), names(all_products), sep = " x ")), collapse = " + ")
   failure_states <- character()
   if (!reducible) failure_states <- c(failure_states, "outside_supported_class")
   if (is.finite(identity_error) && identity_error > tol)
     failure_states <- c(failure_states,
       sprintf("expansion does not reproduce the stored column (max |difference| = %.3e)", identity_error))
+  expected_rank_gain <- if (classification == "rank_preserving_exact") 0L
+    else if (classification %in% c("rank_adding_exact", "reducible_to_interaction")) 1L else NA_integer_
+  verification_status <- if (is.na(rank_gain) || is.na(expected_rank_gain)) "not_run"
+    else if (rank_gain == expected_rank_gain) "concordant" else "sample_degenerate_or_rank_mismatch"
+  if (identical(verification_status, "sample_degenerate_or_rank_mismatch"))
+    failure_states <- unique(c(failure_states, "symbolic_numeric_rank_mismatch"))
 
   list(
     index = index, classification = classification,
+    symbolic_classification = classification,
+    expected_rank_gain = expected_rank_gain,
+    observed_rank_gain = rank_gain,
+    verification_status = verification_status,
     coefficient_map = coefficient_map, blocking_reason = blocking_reason,
-    expansion = list(intercept = const, linear = linear, products = products),
+    expansion = list(intercept = const, linear = linear, products = all_products),
+    effective_expansion = list(intercept = const, linear = linear, products = products),
+    embedded_product_terms = intersect(names(all_products), model_cols),
     expansion_expression = if (nzchar(expansion_expression)) expansion_expression else "0",
     numerical_diagnostics = list(
       identity_error = identity_error, rank_base = rank_base,
@@ -512,6 +532,6 @@ audit_product_in_model <- function(index, model_terms, expansion,
       rank_gain = rank_gain, interaction_gain = interaction_gain,
       c_span_residual = c_span_residual, tolerance = tol),
     failure_states = failure_states,
-    symbolic_layer = "the distributive expansion and the map K follow from the registered definitions",
-    numerical_layer = "ranks and the identity error are computed on the supplied rows and verify, but do not prove, the symbolic claim")
+    symbolic_layer = "the distributive expansion, removal of embedded interactions and map K follow from the registered definitions",
+    numerical_layer = "ranks and identity error are computed on supplied rows and verify, but never determine or prove, the symbolic class")
 }

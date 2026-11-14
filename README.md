@@ -1,6 +1,6 @@
 # composite-index-audit
 
-R package **CompositeIndexAudit** (version 0.34.0, tag v34): pre-fitting
+R package **CompositeIndexAudit** (version 0.36.0): pre-fitting
 algebraic classification of composite indices entered alongside their own
 components in a regression model.
 
@@ -16,15 +16,15 @@ returns one of four classes:
 | class | meaning |
 |---|---|
 | `rank_preserving_exact` | the index lies in the span of the base model; the added coefficient is not identifiable and the increment is zero |
-| `rank_adding_exact` | the decomposition is exact but the index carries a direction outside the base model; its coefficient is the residual's, not an independent contribution |
+| `rank_adding_exact` | under the declared symbolic terms, the index carries a direction outside the base model; its coefficient is the residual's, not an independent contribution; observed sample rank is verified separately |
 | `reducible_to_interaction` | a native-scale product that expands into interactions of columns already in the model |
 | `outside_supported_class` | the symbolic layer cannot decide, and says which terms blocked it |
 
 It also returns the closed-form coefficient map `gamma = K beta` where one
 exists, the named interaction bundle, the intercept remapping
 `beta_0* = beta_0 - k beta_C` for a unit conversion `C* = C + k`, and an
-enumerated failure state (`approximate_collinearity`, `fit_failed`,
-`not_decomposable`) that is never silently downgraded.
+enumerated non-classification state (`approximate_collinearity`, `fit_failed`,
+`not_decomposable`, `not_certified`) that is never silently downgraded.
 
 ## Term identity
 
@@ -34,28 +34,41 @@ different terms even when the column names coincide. A term whose units are
 not declared never matches a declared one, so unknown provenance fails
 closed.
 
-## Install and test
+## Install and use
 
 ```r
-# from a source checkout
-# install.packages(c("survey", "haven", "digest"))  # the only dependencies
-# R CMD INSTALL CompositeIndexAudit_0.34.0.tar.gz   # or install the source dir
+# The runtime package imports only stats; tests use the included base R runner.
+# R CMD INSTALL /path/to/composite-index-audit
 library(CompositeIndexAudit)
 
-# GLM7 = metab + log10(age) + log10(BMI); base = sex + log10(age) + log10(BMI)
+# GLM7 = metab + log10(age) + log10(BMI); base = log10(age) + log10(BMI)
 a <- audit_index_in_model(c(metab = 1, log_age = 1, log_bmi = 1),
                           c(log_age = 1, log_bmi = 1))
 a$classification                     # "rank_adding_exact" (no data needed)
 
-# same index, base now containing metab: the class follows the model
+# The same index against a base containing metab
 b <- audit_index_in_model(c(metab = 1, log_age = 1, log_bmi = 1),
                           c(metab = 1, log_age = 1, log_bmi = 1))
 b$classification                     # "rank_preserving_exact"
 ```
 
-`testthat::test_dir("tests/testthat")` runs the distributed suite (46
-expectations across four files); `R CMD check` returns 0 errors, 0 warnings
-and 0 notes under R 4.5.1.
+`audit_registered_index()` and `audit_index_in_model()` are the pre-fitting
+entry points. `audit_fit()` is a convenience interface for an already-fitted
+object. Exact certification through the public registered/expression interfaces
+requires a named vector of five-field term keys and declared units. Incomplete
+metadata return `not_certified`; `strict = FALSE` is reserved for explicitly
+exploratory legacy comparisons.
+
+Version 0.36.0 adds 270 decision-integrity expectations for log-base conversion,
+five-field identity, scale-error detection and symbolic classification on degenerate
+samples. The strict public example now uses complete five-field term keys. Validation
+logs in the submission package report the commands actually executed with R 4.5.2;
+`R CMD check --no-manual` omits PDF-manual rendering because a LaTeX toolchain is not
+available. The reported NHANES analyses were produced by the preceding release; the
+current release reproduces the registry classification, while this revision's derived
+threshold-yield and unit-factor quantities are deterministic recalculations from the
+archived aggregate results. The current 16,000-replication simulation was rerun with
+R 4.5.2.
 
 ## Layout
 
@@ -63,8 +76,8 @@ and 0 notes under R 4.5.1.
   (`algebra_audit.R`), the frozen 25-expression registry
   (`index_registry.R`), the five-field term identity (`term_identity.R`),
   the public API (`public_api.R`), `audit_fit()` for fitted-model objects
-  (`audit_fit.R`), and the independent registry re-derivation
-  (`registry_audit.R`)
+  (`audit_fit.R`), and the registry concordance checks based on hand-written
+  algebraic expansions (`registry_audit.R`)
 - `man/` - roxygen-generated help pages; `inst/CITATION`; `NEWS.md`
 - `tests/testthat/` - the test suite
 - `analysis/` - the NHANES demonstration pipeline: `build_results.R`,
@@ -85,7 +98,11 @@ hard-coded. They write to `CIA_OUT` (default `../results`).
 
 ## Requirements
 
-R >= 4.5; CRAN packages `survey`, `haven`, `digest`. No compiled code.
+The runtime package imports base R `stats`. The formal check executes the
+testthat-compatible files with the included base R runner; the optional standard
+entry point uses `testthat`. Model-class tests additionally use `survey` and
+`survival`. The NHANES analysis scripts use `haven`, `survey` and `digest`.
+No compiled code is included.
 
 ## License
 

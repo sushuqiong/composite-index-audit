@@ -24,6 +24,19 @@
 # Returns list(index_terms, embedded_terms, intercept, note) or NULL when the
 # record is not additive (product-form records are handled separately).
 # ---------------------------------------------------------------------------
+
+#' Literal algebraic decompositions for the additive registry records
+#'
+#' Hand-derived from the published formulas (\code{log(a/b) = log a - log b},
+#' \code{log10(x) = ln(x)/ln(10)}, and so on), not read back from the
+#' reference labels.  Returns \code{NULL} for records that are not additive.
+#'
+#' @param record_id Character scalar, a registry record id.
+#' @return A list with \code{index_terms}, \code{embedded_terms},
+#'   \code{intercept} and \code{note}, or \code{NULL}.
+#' @export
+#' @examples
+#' derive_additive_terms("TyG")
 derive_additive_terms <- function(record_id) {
   ln10 <- log(10)
   d <- list(
@@ -109,6 +122,22 @@ outside_class_reason <- function(record_id) {
 }
 
 # Run the REAL audit on one record and return the actual classification.
+
+#' Re-derive the class of one registry record from first principles
+#'
+#' The reference labels are never read here: the class is derived from the
+#' registered expression and its registered base model, using the same audit
+#' code the package exposes.
+#'
+#' @param record_id Character scalar; \code{"GLM7-b"} is the second GLM7
+#'   record.
+#' @param data Optional data frame for the numerical layer.
+#' @param tol Numerical tolerance.
+#' @return A list with \code{actual_class}, \code{blocking_reason},
+#'   \code{identity_error}, \code{rank_gain} and \code{path}.
+#' @export
+#' @examples
+#' audit_one_record("TyG")$actual_class
 audit_one_record <- function(record_id, data = NULL, tol = 1e-10) {
   base_id <- sub("-b$", "", record_id)
   exps <- product_expansions()
@@ -145,6 +174,18 @@ audit_one_record <- function(record_id, data = NULL, tol = 1e-10) {
 }
 
 # Full concordance table over the 26 audit records.
+
+#' Concordance table over all 26 audit records
+#'
+#' @param data Optional data frame for the numerical layer.
+#' @param tol Numerical tolerance.
+#' @return A data frame with \code{record}, \code{expected_class},
+#'   \code{actual_class}, \code{concordant}, \code{derivation_path},
+#'   \code{blocking_reason}, \code{identity_error} and \code{rank_gain}.
+#' @export
+#' @examples
+#' tab <- audit_registry_concordance()
+#' all(tab$concordant)
 audit_registry_concordance <- function(data = NULL, tol = 1e-10) {
   ref <- reference_audit_classes()
   ids <- names(ref)

@@ -85,6 +85,24 @@
   "UNSUPPORTED"
 }
 
+
+#' Parse a composite-index expression into monomials
+#'
+#' A deliberately small, honest grammar: column names, numeric constants,
+#' \code{+}, \code{-}, \code{*} and division by a \emph{constant}, and
+#' \code{log()} or \code{log10()} applied to a single column at the additive
+#' top level.  Anything else (powers, square roots, division by a column, a
+#' logarithm of a sum) is reported as \code{"unsupported"} rather than being
+#' approximated, because an approximation would silently change the
+#' classification.
+#'
+#' @param expr An R expression or a character string holding one.
+#' @return A list with \code{status}, \code{expression}, \code{intercept},
+#'   \code{linear}, \code{products}, \code{logs} and \code{log_bases}.
+#' @export
+#' @examples
+#' parse_index_expression("log(tg) + log(glucose) - log(2)")
+#' parse_index_expression("waist / (BMI^(2/3))")$status
 parse_index_expression <- function(expr) {
   e <- if (is.character(expr)) parse(text = expr)[[1]] else substitute(expr)
   monos <- .v32_walk(e)
@@ -122,6 +140,24 @@ parse_index_expression <- function(expr) {
 # ---------------------------------------------------------------------------
 .v32_user_registry <- new.env()
 
+
+#' Register a composite index at runtime
+#'
+#' Stores a parsed expression under a name so that
+#' \code{\link{audit_registered_index}} and \code{\link{audit_fit}} can use it
+#' without the caller re-transcribing coefficients.
+#'
+#' @param name Character scalar, the index name.
+#' @param expression An R expression or character string.
+#' @param units Optional named character vector of units, one per component
+#'   column.  Supplying them is what lets the term-identity layer distinguish
+#'   \code{log10(x)} from \code{ln(x)} from \code{x}.
+#' @param overwrite Logical; allow replacing an existing registration.
+#' @return The parsed index, invisibly.
+#' @export
+#' @examples
+#' register_index("my_ratio", "log(tg_mmol_L) - log(hdl_mmol_L)",
+#'                units = c(tg_mmol_L = "mmol/L", hdl_mmol_L = "mmol/L"))
 register_index <- function(name, expression, units = character(0),
                            overwrite = FALSE) {
   stopifnot(is.character(name), length(name) == 1L, nzchar(name))
@@ -150,7 +186,113 @@ register_index <- function(name, expression, units = character(0),
 # A term matches the model only when variable, transformation, log base and
 # encoding agree; declared units must agree as well.  log(x) therefore never
 # collapses onto x or 1/x, and log10 never silently equals ln.
-audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10) {
+
+#' Audit a registered index against a stated base model
+#'
+#' This is the hand-transcribed entry point: the caller supplies the base model
+#' columns.  \code{\link{audit_fit}} does the same job by reading them off a
+#' fitted model object.
+#'
+#' @param name Character scalar, a registered index name.
+#' @param model_terms Character vector of base model columns, or a NAMED
+#'   character vector mapping column name to a five-field term key
+#'   \code{variable|transform|base|units|encoding}.  When unnamed, the audit
+#'   runs in bare-name mode and every comparison is reported as unkeyed.
+#' @param data Optional data frame for the numerical verification layer.
+#' @param tol Numerical tolerance for the algebraic comparisons.
+#' @param strict Logical; if TRUE (default), incomplete metadata return not_certified.
+#' @return A list: \code{classification}, \code{coefficient_map},
+#'   \code{blocking_reason}, \code{residual_expression},
+#'   \code{numerical_diagnostics}, \code{failure_states}.
+#' @export
+#' @examples
+#' register_index("cia_demo_tyg", "log_tg_mg + log_glucose_mg",
+#'                units = c(log_tg_mg = "ln(mg/dL)", log_glucose_mg = "ln(mg/dL)"))
+#' audit_registered_index("cia_demo_tyg",
+#'   c(log_tg_mg = "log_tg_mg|identity|-|ln(mg/dL)|-",
+#'     log_glucose_mg = "log_glucose_mg|identity|-|ln(mg/dL)|-"))$classification
+.cia_not_certified <- function(reason, tol = 1e-10, matching = NULL) {
+  list(classification = "not_certified",
+       symbolic_classification = NA_character_,
+       coefficient_map = NULL,
+       blocking_reason = reason,
+       residual_expression = NA_character_,
+       numerical_diagnostics = list(rank_base = NA_integer_,
+         rank_augmented = NA_integer_, rank_gain = NA_integer_,
+         condition_number = NA_real_, empirical_correlation = NA_real_,
+         tolerance = tol),
+       failure_states = "term_identity_incomplete",
+       term_matching = matching,
+       certification_status = "withheld")
+}
+
+.cia_audit_parsed <- function(name, parsed, model_terms, data = NULL,
+                              tol = 1e-10, strict = TRUE) {
+  stopifnot(is.character(model_terms), length(model_terms) >= 1L)
+  units <- parsed$units %||% character(0)
+  unit_of <- function(nm) if (nm %in% names(units)) units[[nm]] else "?"
+  keyed <- !is.null(names(model_terms)) && all(nzchar(names(model_terms)))
+  model_cols <- if (keyed) names(model_terms) else unname(model_terms)
+  model_keys <- if (keyed) unname(model_terms) else
+    vapply(model_cols, bare_term_key, character(1))
+
+  if (parsed$status == "product_expandable") {
+    vars <- unique(c(names(parsed$linear %||% numeric(0)),
+      unlist(strsplit(names(parsed$products), ":", fixed = TRUE))))
+    idx_keys <- vapply(vars, function(nm)
+      make_term_key(nm, "identity", "-", unit_of(nm), "-"), character(1))
+    cmp <- term_key_in(idx_keys, model_keys)
+    matching <- list(mode = if (keyed) "keyed" else "legacy_bare_names",
+      component_terms = vars, comparison = unname(cmp),
+      unkeyed_terms = vars[cmp == "unkeyed"],
+      note = "exact product certification requires complete five-field metadata")
+    if (isTRUE(strict) && (!keyed || any(cmp == "unkeyed")))
+      return(.cia_not_certified(
+        "product component metadata are incomplete; exact certification is withheld",
+        tol = tol, matching = matching))
+    out <- audit_product_in_model(name, model_cols,
+      list(intercept = parsed$intercept, linear = parsed$linear,
+           products = parsed$products), data = data, tol = tol)
+    out$term_matching <- matching
+    out$certification_status <- if (out$classification == "outside_supported_class")
+      "not_applicable" else "symbolic_exact"
+    if (length(matching$unkeyed_terms) || !keyed)
+      warning("audit_registered_index: product metadata are incomplete; use strict = TRUE (the default) to withhold certification")
+    return(out)
+  }
+
+  idx_terms <- c(parsed$linear, parsed$logs)
+  idx_keys <- c(
+    vapply(names(parsed$linear), function(nm)
+      make_term_key(nm, "identity", "-", unit_of(nm), "-"), character(1)),
+    vapply(names(parsed$logs), function(nm) {
+      b <- parsed$log_bases[[nm]]
+      make_term_key(nm, if (b == 10L) "log10" else "log",
+                    if (b == 10L) "10" else "e", unit_of(nm), "-")
+    }, character(1)))
+  cmp <- term_key_in(idx_keys, model_keys)
+  unkeyed_terms <- names(idx_terms)[cmp == "unkeyed"]
+  matching <- list(mode = if (keyed) "keyed" else "legacy_bare_names",
+    component_terms = names(idx_terms), comparison = unname(cmp),
+    unkeyed_terms = unkeyed_terms,
+    note = "terms are compared on variable|transform|base|units|encoding")
+  if (isTRUE(strict) && (!keyed || length(unkeyed_terms)))
+    return(.cia_not_certified(
+      "component metadata are incomplete; exact certification is withheld",
+      tol = tol, matching = matching))
+  emb <- idx_terms[if (isTRUE(strict)) cmp == "match" else cmp != "mismatch"]
+  out <- audit_index_in_model(idx_terms, emb, emb, data = data, tol = tol,
+                              intercept = parsed$intercept)
+  out$term_matching <- matching
+  out$certification_status <- if (out$classification %in%
+      c("rank_preserving_exact", "rank_adding_exact")) "symbolic_exact" else "not_applicable"
+  if (length(unkeyed_terms) || !keyed)
+    warning("audit_registered_index: metadata are incomplete; this exploratory result requires explicit strict = FALSE")
+  out
+}
+
+audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10,
+                                   strict = TRUE) {
   parsed <- if (exists(name, envir = .v32_user_registry))
     get(name, envir = .v32_user_registry) else {
       exps <- product_expansions()
@@ -161,55 +303,30 @@ audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10) 
              logs = numeric(0), log_bases = integer(0))
       } else stop("index is not registered: ", name)
     }
-  if (parsed$status == "product_expandable")
-    return(audit_product_in_model(
-      name, unname(model_terms),
-      list(intercept = parsed$intercept, linear = parsed$linear,
-           products = parsed$products),
-      data = data, tol = tol))
-  # additive (log-)linear: C = const + sum_j a_j w_j; the constant is absorbed
-  # by the model intercept and enters the coefficient map.
-  units <- parsed$units %||% character(0)
-  unit_of <- function(nm) if (nm %in% names(units)) units[[nm]] else "?"
-  idx_terms <- c(parsed$linear, parsed$logs)
-  idx_keys <- c(
-    vapply(names(parsed$linear),
-           function(nm) make_term_key(nm, "identity", "-", unit_of(nm), "-"),
-           character(1)),
-    vapply(names(parsed$logs), function(nm) {
-      b <- parsed$log_bases[[nm]]  # parser stores 0L for ln, 10L for log10
-      make_term_key(nm, if (b == 10L) "log10" else "log",
-                    if (b == 10L) "10" else "e", unit_of(nm), "-")
-    }, character(1)))
-  keyed <- !is.null(names(model_terms)) && all(nzchar(names(model_terms)))
-  if (keyed) {
-    model_keys <- unname(model_terms)
-    names(model_keys) <- names(model_terms)
-  } else {
-    model_keys <- setNames(vapply(model_terms, bare_term_key, character(1)),
-                           model_terms)
-  }
-  cmp <- term_key_in(idx_keys, unname(model_keys))
-  emb <- idx_terms[cmp != "mismatch"]
-  unkeyed_terms <- names(idx_terms)[cmp == "unkeyed"]
-  out <- audit_index_in_model(idx_terms, emb, emb, data = data, tol = tol,
-                              intercept = parsed$intercept)
-  out$term_matching <- list(
-    mode = if (keyed) "keyed" else "legacy_bare_names",
-    unkeyed_terms = unkeyed_terms,
-    note = paste("terms matched on the five-field identity",
-                 "variable|transform|base|units|encoding;",
-                 "'unkeyed' means units were undeclared on at least one side"))
-  if (length(unkeyed_terms) || !keyed)
-    warning("audit_registered_index: unit metadata undeclared for ",
-            paste(c(names(model_terms), unkeyed_terms), collapse = ", "),
-            " - declare units via register_index(units = ...) and named model_terms keys")
-  out
+  .cia_audit_parsed(name, parsed, model_terms, data = data, tol = tol,
+                    strict = strict)
 }
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ---------------------------------------------------------------------------
+
+#' Recompute a stored index column from its registered expression
+#'
+#' Catches unit, scale and transcription mistakes: the stored column is
+#' recomputed from the raw components and compared element by element.
+#'
+#' @param data A data frame holding the index and its components.
+#' @param name Character scalar, the index (column) name.
+#' @param expression Optional expression, used when \code{name} is not
+#'   registered.
+#' @param tol Maximum acceptable absolute error.
+#' @return A list with \code{max_abs_error}, \code{ok} and \code{tolerance}.
+#' @export
+#' @examples
+#' d <- data.frame(tg = c(1.2, 2.3), glu = c(4.5, 5.1))
+#' d$TyG <- log(d$tg) + log(d$glu)
+#' verify_index_column(d, "TyG", expression = "log(tg) + log(glu)")
 verify_index_column <- function(data, name, expression = NULL, tol = 1e-8) {
   if (!name %in% names(data)) stop("column not in data: ", name)
   parsed <- if (!is.null(expression)) parse_index_expression(expression)
@@ -236,6 +353,21 @@ verify_index_column <- function(data, name, expression = NULL, tol = 1e-8) {
 }
 
 # ---------------------------------------------------------------------------
+
+#' Rescale coefficients between natural-log and log10 bases
+#'
+#' \code{log10(x) = ln(x) / ln(10)}, so the two columns are not equal
+#' elementwise but span the same one-dimensional space.  A coefficient fitted
+#' against one basis is rescaled to be used against the other.
+#'
+#' @param terms Named numeric vector of coefficients.
+#' @param from Basis the coefficients were fitted against, \code{"ln"} or
+#'   \code{"log10"}.
+#' @param to Basis required.
+#' @return The rescaled coefficient vector.
+#' @export
+#' @examples
+#' normalize_log_base(c(log_tg = 0.7), from = "ln", to = "log10")
 normalize_log_base <- function(terms, from = c("ln", "log10"), to = c("ln", "log10")) {
   from <- match.arg(from); to <- match.arg(to)
   stopifnot(is.numeric(terms), !is.null(names(terms)))

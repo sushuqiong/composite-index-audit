@@ -29,8 +29,22 @@ AUDIT_FIT_CLASSES <- c("glm", "lm", "svyglm", "coxph", "survreg")
 AUDIT_FOUR_CLASSES <- c("rank_preserving_exact", "rank_adding_exact",
                         "reducible_to_interaction", "outside_supported_class")
 AUDIT_NON_CLASS_STATES <- c("approximate_collinearity", "fit_failed",
-                            "not_decomposable")
+                            "not_decomposable", "not_certified")
 
+
+#' Is a returned label one of the four classes?
+#'
+#' The audit returns one of four classes, or an explicit non-classification
+#' state.  Keeping the two apart is what lets the text say so without
+#' overcounting the classes.
+#'
+#' @param classification Character scalar, the label returned by an audit.
+#' @return \code{"class"}, \code{"non_classification_state"} or
+#'   \code{"unknown"}.
+#' @export
+#' @examples
+#' audit_state_type("rank_preserving_exact")
+#' audit_state_type("approximate_collinearity")
 audit_state_type <- function(classification) {
   if (is.null(classification) || length(classification) != 1L ||
       is.na(classification)) return("unknown")
@@ -44,6 +58,17 @@ audit_state_type <- function(classification) {
 # objects: model frame, terms, model matrix, coefficient vector (whose NA
 # entries are the aliased columns).
 # ---------------------------------------------------------------------------
+
+#' Extract the design of a fitted model for auditing
+#'
+#' @param fit A fitted model object.
+#' @return A list with \code{model_frame}, \code{terms}, \code{model_matrix},
+#'   \code{coefficients} and \code{aliased_columns}.
+#' @export
+#' @examples
+#' fit <- glm(dx ~ log_age, data = data.frame(log_age = c(1, 2, 3), dx = c(0, 1, 0)),
+#'            family = binomial())
+#' names(audit_fit_design(fit))
 audit_fit_design <- function(fit) {
   mf <- tryCatch(stats::model.frame(fit), error = function(e) NULL)
   tt <- NULL
@@ -114,6 +139,20 @@ audit_fit_weights <- function(fit) {
 #   neither            -> outside_supported_class, with the parser asked to
 #                         refuse the registered formula as a second opinion
 # ---------------------------------------------------------------------------
+
+#' Audit an index against an arbitrary stated base
+#'
+#' The three routes the registry audit uses, with the base supplied by the
+#' caller: product expansions, additive decompositions, and the outside class.
+#'
+#' @param index Character scalar, the index name.
+#' @param base_terms Character vector of base model terms.
+#' @param data Optional data frame for the numerical layer.
+#' @param tol Numerical tolerance.
+#' @return The audit list.
+#' @export
+#' @examples
+#' audit_symbolic_for_base("TyG", c("sex", "log_tg_mg", "log_glucose_mg"))$classification
 audit_symbolic_for_base <- function(index, base_terms, data = NULL, tol = 1e-10) {
   exps <- product_expansions()
   if (index %in% names(exps))
@@ -167,9 +206,56 @@ audit_symbolic_for_base <- function(index, base_terms, data = NULL, tol = 1e-10)
 #                columns, so it can never verify an index whose components
 #                lie outside the base.
 # ---------------------------------------------------------------------------
+
+#' Audit a composite index against an already-fitted model
+#'
+#' The entry point a user reaches for.  \code{audit_fit()} reads the design
+#' matrix, the terms, the aliased columns, the family, the offset and the
+#' weights off the fitted object and then delegates to the same symbolic layer
+#' the rest of the package uses.  It does not refit anything and does not look
+#' at the outcome: the class it returns is a property of the pair
+#' (index, base model).
+#'
+#' Supported model classes are \code{glm}, \code{lm}, \code{svyglm},
+#' \code{coxph} and \code{survreg}.  An offset is reported as
+#' \code{"offset_present"} and aliased columns as
+#' \code{"aliased_columns_present"}; neither is downgraded.
+#'
+#' Term identity is never inferred from a variable name: a column called
+#' \code{log_bmi} is treated as a bare name with undeclared transformation and
+#' units unless the caller passes a NAMED \code{model_terms} vector.
+#'
+#' @param fit A fitted model object of a supported class.
+#' @param index Character scalar, a registered index name (or any name when
+#'   \code{expression} is supplied).
+#' @param expression Optional index expression, parsed and used instead of the
+#'   registry.
+#' @param data Optional data frame for the numerical verification layer.  When
+#'   \code{NULL} the audit runs in the symbolic branch, which is the honest
+#'   default: the model frame carries only the model columns, so it can never
+#'   verify an index whose components lie outside the base.
+#' @param model_terms Optional override, a character vector of design-matrix
+#'   columns or a NAMED vector mapping column to five-field term key.
+#' @param tol Numerical tolerance.
+#' @param units Optional named character vector of component units for expression-based certification.
+#' @param strict Logical; if TRUE (default), incomplete metadata return not_certified.
+#' @param drop_index Drop the index itself from the base model terms.
+#' @param keep_aliased Keep aliased columns among the base model terms.
+#' @return The audit list, with an added \code{model_object} holding what was
+#'   read off the fit, plus \code{state_type} and \code{is_classification}.
+#' @export
+#' @examples
+#' d <- data.frame(sex = factor(c("M", "F", "M", "F")),
+#'                 log_tg_mg = c(4.6, 4.8, 4.7, 5.0),
+#'                 log_glucose_mg = c(4.3, 4.5, 4.4, 4.6),
+#'                 log_age = c(1.6, 1.7, 1.65, 1.66),
+#'                 log_bmi = c(1.4, 1.5, 1.45, 1.47),
+#'                 dx = c(0, 1, 0, 1))
+#' fit <- glm(dx ~ sex + log_age + log_bmi, data = d, family = binomial())
+#' audit_fit(fit, "TyG", strict = FALSE)$classification
 audit_fit <- function(fit, index, expression = NULL, data = NULL,
-                      model_terms = NULL, tol = 1e-10,
-                      drop_index = TRUE, keep_aliased = FALSE) {
+                      model_terms = NULL, tol = 1e-10, units = character(0),
+                      strict = TRUE, drop_index = TRUE, keep_aliased = FALSE) {
   stopifnot(is.character(index), length(index) == 1L, nzchar(index))
   cls <- class(fit)
   if (!any(AUDIT_FIT_CLASSES %in% cls))
@@ -215,15 +301,14 @@ audit_fit <- function(fit, index, expression = NULL, data = NULL,
     parsed <- parse_index_expression(expression)
     if (parsed$status == "unsupported")
       stop("expression is outside the supported grammar: ", parsed$expression)
-    idx_terms <- c(parsed$linear, parsed$logs)
-    emb <- if (keyed) {
-      keys <- unname(model_terms)
-      idx_keys <- vapply(names(idx_terms), function(nm)
-        make_term_key(nm, "identity", "-", "?", "-"), character(1))
-      idx_terms[term_key_in(idx_keys, keys) != "mismatch"]
-    } else idx_terms[intersect(names(idx_terms), base_for_symbolic)]
-    audit_index_in_model(idx_terms, emb, emb, data = data, tol = tol,
-                         intercept = parsed$intercept)
+    if (length(units)) parsed$units <- units
+    .cia_audit_parsed(index, parsed, model_terms, data = data, tol = tol,
+                      strict = strict)
+  } else if (isTRUE(strict)) {
+    .cia_not_certified(
+      paste("the built-in registry does not carry sufficient term metadata for a fitted-object audit;",
+            "supply expression and units, or use strict = FALSE for the legacy exploratory audit"),
+      tol = tol)
   } else {
     audit_symbolic_for_base(index, base_for_symbolic, data = data, tol = tol)
   }
@@ -262,4 +347,3 @@ audit_fit <- function(fit, index, expression = NULL, data = NULL,
   res
 }
 
-`%||%` <- function(a, b) if (is.null(a)) b else a

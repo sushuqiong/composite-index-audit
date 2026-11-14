@@ -24,7 +24,8 @@ v28_registry <- function() {
       "inflammation_hematologic", "inflammation_nutrition", "metabolic_sensitivity"),
     analysis_role = c(rep("primary_candidate", 24), "scale_sensitivity"),
     status = c(rep("published_formula", 3), rep("exploratory_constructed", 2),
-      rep("published_formula", 8), rep("exploratory_constructed", 8),
+      rep("published_formula", 8), rep("exploratory_constructed", 5),
+      rep("published_formula", 2), rep("exploratory_constructed", 1),
       rep("published_formula", 4)),
     formula = c(
       "metab + log10(age) + log10(BMI)",
@@ -71,7 +72,7 @@ v28_registry <- function() {
       "ref13_Krakauer2012ABSI", "ref14_Dobiasova2001AIP", "ref5_Matthews1985HOMA",
       "exploratory_CRP_albumin_ratio", "exploratory_monocyte_HDL_ratio", "exploratory_TyG_times_hsCRP",
       "exploratory_hsCRP_times_BMI", "exploratory_hsCRP_times_waist", "exploratory_SII_times_BMI",
-      "standard_NLR_definition", "standard_PLR_definition", "ref15_Hu2014SII", "ref16_Qi2016SIRI",
+      "ref32_Zahorec2001NLR", "ref33_Smith2009PLR", "ref15_Hu2014SII", "ref16_Qi2016SIRI",
       "ref17_Onodera1984PNI", "ref5_Matthews1985HOMA"),
     stringsAsFactors = FALSE
   )
@@ -94,6 +95,18 @@ v28_registry <- function() {
 # ---------------------------------------------------------------------------
 # v34: this is part of the public API (see public_api.R); the v32 name
 # v32_product_expansions is kept below as a deprecated alias.
+
+#' Native-scale product expansions for the product-form indices
+#'
+#' The distributive law applied to each published product formula, written in
+#' model-column names.  \code{"log10_tg"} means \code{log10(TG_mmol_L)} and
+#' \code{"sexFemale"} is the dummy column of the factor term \code{sex}.
+#'
+#' @return A named list of expansions, each with \code{intercept},
+#'   \code{linear} and/or \code{products}.
+#' @export
+#' @examples
+#' names(product_expansions())
 product_expansions <- function() {
   list(
     TyG_BMI = list(products = c("TyG:BMI" = 1)),
@@ -121,6 +134,18 @@ product_expansions <- function() {
 # rank_preserving_exact), so the 25 rows yield 26 audit records:
 # 15 rank_preserving_exact + 1 rank_adding_exact + 5 reducible_to_interaction
 # + 5 outside_supported_class.
+
+#' Hand-written reference classification, one per registry row
+#'
+#' These labels are a reference answer written by hand from the published
+#' formulas.  They are never fed to the audit functions;
+#' \code{\link{audit_registry_concordance}} re-derives every class from first
+#' principles and \code{test_audit} requires the two to agree record by record.
+#'
+#' @return A named character vector of classes.
+#' @export
+#' @examples
+#' table(reference_audit_classes())
 reference_audit_classes <- function() {
   c(GLM7 = "rank_adding_exact", TyG = "rank_preserving_exact",
     TyG_BMI = "reducible_to_interaction", TyG_WC = "reducible_to_interaction",
@@ -145,6 +170,18 @@ reference_audit_classes <- function() {
 # nothing about the algebra.
 GLM7_SEVEN_MEASURES <- c("glucose", "insulin", "triglycerides", "LDL",
                          "HDL", "age", "BMI")
+
+#' The seven measures of GLM7, written out in full
+#'
+#' The registered string is \code{metab + log10(age) + log10(BMI)}, where
+#' \code{metab} is a named sub-expression.  Because whether a component is
+#' present changes the classification, the seven routine measures are written
+#' out explicitly here.
+#'
+#' @return A character scalar holding the expanded expression.
+#' @export
+#' @examples
+#' glm7_full_expression()
 glm7_full_expression <- function() {
   paste0("log10(glucose_mg_dL) + log10(insulin_pmol_L) + log10(tg_mmol_L)",
          " + log10(LDL_mmol_L) - log10(hdl_mmol_L)",
@@ -163,7 +200,19 @@ component_scale_in_base <- function(component_terms) {
   else if (has_ln) "log" else "identity"
 }
 
-registry_v34 <- function() {
+
+#' The frozen registry of 25 composite indices
+#'
+#' Returns the registry used throughout the accompanying paper: 25 registered
+#' expressions with their published formula, component terms, provenance and
+#' reference audit class.  \code{GLM7} is dual-registered, so the 25 rows yield
+#' 26 audit records.
+#'
+#' @return A data frame, one row per index.
+#' @export
+#' @examples
+#' head(index_registry()[, c("index", "reference_class", "provenance")])
+index_registry <- function() {
   reg <- v28_registry()
   cls <- reference_audit_classes()
   stopifnot(all(reg$index %in% names(cls)))
@@ -200,7 +249,7 @@ registry_v34 <- function() {
 # Deprecated v32 aliases, kept so earlier calling code keeps working.
 v32_product_expansions <- product_expansions
 v32_audit_classes <- reference_audit_classes
-v32_registry <- registry_v34
+v32_registry <- index_registry
 
 compute_candidate_indices <- function(d) {
   # The caller must supply official-unit columns. Values outside each formula's
@@ -416,3 +465,5 @@ evaluate_candidate_family <- function(index, data, design, registry = v28_regist
        base_formula = deparse(spec$base_formula), augmented_formula = deparse(spec$augmented_formula),
        status = "delegated_to_evaluate_incremental_model", analysis_role = spec$analysis_role)
 }
+
+registry_v34 <- index_registry

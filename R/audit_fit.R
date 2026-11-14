@@ -29,7 +29,7 @@ AUDIT_FIT_CLASSES <- c("glm", "lm", "svyglm", "coxph", "survreg")
 AUDIT_FOUR_CLASSES <- c("rank_preserving_exact", "rank_adding_exact",
                         "reducible_to_interaction", "outside_supported_class")
 AUDIT_NON_CLASS_STATES <- c("approximate_collinearity", "fit_failed",
-                            "not_decomposable")
+                            "not_decomposable", "not_certified")
 
 
 #' Is a returned label one of the four classes?
@@ -237,6 +237,8 @@ audit_symbolic_for_base <- function(index, base_terms, data = NULL, tol = 1e-10)
 #' @param model_terms Optional override, a character vector of design-matrix
 #'   columns or a NAMED vector mapping column to five-field term key.
 #' @param tol Numerical tolerance.
+#' @param units Optional named character vector of component units for expression-based certification.
+#' @param strict Logical; if TRUE (default), incomplete metadata return not_certified.
 #' @param drop_index Drop the index itself from the base model terms.
 #' @param keep_aliased Keep aliased columns among the base model terms.
 #' @return The audit list, with an added \code{model_object} holding what was
@@ -250,10 +252,10 @@ audit_symbolic_for_base <- function(index, base_terms, data = NULL, tol = 1e-10)
 #'                 log_bmi = c(1.4, 1.5, 1.45, 1.47),
 #'                 dx = c(0, 1, 0, 1))
 #' fit <- glm(dx ~ sex + log_age + log_bmi, data = d, family = binomial())
-#' audit_fit(fit, "TyG")$classification
+#' audit_fit(fit, "TyG", strict = FALSE)$classification
 audit_fit <- function(fit, index, expression = NULL, data = NULL,
-                      model_terms = NULL, tol = 1e-10,
-                      drop_index = TRUE, keep_aliased = FALSE) {
+                      model_terms = NULL, tol = 1e-10, units = character(0),
+                      strict = TRUE, drop_index = TRUE, keep_aliased = FALSE) {
   stopifnot(is.character(index), length(index) == 1L, nzchar(index))
   cls <- class(fit)
   if (!any(AUDIT_FIT_CLASSES %in% cls))
@@ -299,15 +301,14 @@ audit_fit <- function(fit, index, expression = NULL, data = NULL,
     parsed <- parse_index_expression(expression)
     if (parsed$status == "unsupported")
       stop("expression is outside the supported grammar: ", parsed$expression)
-    idx_terms <- c(parsed$linear, parsed$logs)
-    emb <- if (keyed) {
-      keys <- unname(model_terms)
-      idx_keys <- vapply(names(idx_terms), function(nm)
-        make_term_key(nm, "identity", "-", "?", "-"), character(1))
-      idx_terms[term_key_in(idx_keys, keys) != "mismatch"]
-    } else idx_terms[intersect(names(idx_terms), base_for_symbolic)]
-    audit_index_in_model(idx_terms, emb, emb, data = data, tol = tol,
-                         intercept = parsed$intercept)
+    if (length(units)) parsed$units <- units
+    .cia_audit_parsed(index, parsed, model_terms, data = data, tol = tol,
+                      strict = strict)
+  } else if (isTRUE(strict)) {
+    .cia_not_certified(
+      paste("the built-in registry does not carry sufficient term metadata for a fitted-object audit;",
+            "supply expression and units, or use strict = FALSE for the legacy exploratory audit"),
+      tol = tol)
   } else {
     audit_symbolic_for_base(index, base_for_symbolic, data = data, tol = tol)
   }

@@ -26,6 +26,26 @@
 # The legacy labels exact_reparameterization / not_supported and the v31 label
 # not_decomposable are kept as secondary fields so earlier callers keep working.
 
+
+#' Symbolic decomposition of a composite index against a base model
+#'
+#' Writes \code{C = E + R}, where \code{E} is the part of the index that the
+#' base model already spans and \code{R} is the residual, and checks whether
+#' \code{R} adds a dimension.  The numerical rank check verifies the symbolic
+#' claim; it never proves it.
+#'
+#' @param index_terms Named numeric vector: the index as a linear form.
+#' @param embedded_terms Named numeric vector: the part present in the base.
+#' @param model_terms Named numeric vector: the base model columns.
+#' @param data Optional data frame for the numerical layer.
+#' @param tol Numerical tolerance.
+#' @param approximate_correlation Correlation above which a non-exact match is
+#'   flagged as approximate collinearity rather than as a class.
+#' @return A list with \code{status}, \code{exact_reparameterization},
+#'   \code{residual_terms}, diagnostics and \code{warnings}.
+#' @export
+#' @examples
+#' audit_composite_index(c(a = 1, b = 1), c(a = 1, b = 1))$status
 audit_composite_index <- function(index_terms, embedded_terms,
                                    model_terms = embedded_terms, data = NULL,
                                    tol = 1e-10, approximate_correlation = 0.90) {
@@ -79,15 +99,10 @@ audit_composite_index <- function(index_terms, embedded_terms,
   # numeric check is a verification of the symbolic claim, never its proof.
   if (!exact) {
     status <- if (approximate) "approximate_collinearity" else "not_decomposable"
-  } else if (is.na(rank_gain)) {
-    # v34 fix: residual is a fixed-length named vector over all_terms, so its
-    # length is never zero. The symbolic question is whether every entry is
-    # zero within tolerance (C = E). This makes the no-data branch
-    # independent of the sample rank: audit_index_in_model(c(x=1,y=1),
-    # c(x=1,y=1), data = NULL) now returns rank_preserving_exact.
-    status <- if (all(abs(residual) <= tol)) "rank_preserving_exact" else "rank_adding_exact"
   } else {
-    status <- if (rank_gain == 0L) "rank_preserving_exact" else "rank_adding_exact"
+    # v35: classification is symbolic. Observed rank is a separate numerical
+    # diagnostic and can never turn a non-zero symbolic residual into zero.
+    status <- if (all(abs(residual) <= tol)) "rank_preserving_exact" else "rank_adding_exact"
   }
   warnings <- character()
   if (!embedded_match) warnings <- c(warnings, "embedded terms or coefficients do not match the index representation")
@@ -123,6 +138,24 @@ audit_composite_index <- function(index_terms, embedded_terms,
 # v34: intercept is the additive constant of the registered index (for
 # example HOMA-IR carries -log(22.5) once on the log scale). It maps to the
 # model intercept: gamma_0 = beta_0 + intercept * beta_C.
+
+#' Audit an additive (log-)linear index in a stated base model
+#'
+#' @param index_terms Named numeric vector giving the index as a linear form.
+#' @param embedded_terms Named numeric vector, the embedded part.
+#' @param model_terms Named numeric vector, the base model columns.
+#' @param data Optional data frame for the numerical verification layer.
+#' @param tol Numerical tolerance.
+#' @param approximate_correlation Correlation threshold for the approximate
+#'   collinearity flag.
+#' @param intercept Additive constant of the index; it maps to the model
+#'   intercept as \code{gamma_0 = beta_0 + intercept * beta_C}.
+#' @return A list with \code{classification}, \code{coefficient_map},
+#'   \code{blocking_reason}, \code{residual_expression},
+#'   \code{numerical_diagnostics} and \code{failure_states}.
+#' @export
+#' @examples
+#' audit_index_in_model(c(a = 1, b = 1), c(a = 1, b = 1))$classification
 audit_index_in_model <- function(index_terms, embedded_terms, model_terms = embedded_terms,
                                  data = NULL, tol = 1e-10,
                                  approximate_correlation = 0.90,
@@ -154,7 +187,18 @@ audit_index_in_model <- function(index_terms, embedded_terms, model_terms = embe
       "no embedded term of the index appears in the model with the same transformation, unit and scale"
     else "residual is outside the registered additive log-linear expression class"
   }
+  expected_rank_gain <- if (classification == "rank_preserving_exact") 0L else if (classification == "rank_adding_exact") 1L else NA_integer_
+  observed_rank_gain <- base$diagnostics$rank_gain
+  verification_status <- if (is.na(observed_rank_gain) || is.na(expected_rank_gain)) "not_run"
+    else if (observed_rank_gain == expected_rank_gain) "concordant"
+    else "sample_degenerate_or_rank_mismatch"
+  if (identical(verification_status, "sample_degenerate_or_rank_mismatch"))
+    failure_states <- unique(c(failure_states, "symbolic_numeric_rank_mismatch"))
   list(classification = classification,
+       symbolic_classification = classification,
+       expected_rank_gain = expected_rank_gain,
+       observed_rank_gain = observed_rank_gain,
+       verification_status = verification_status,
        coefficient_map = coefficient_map,
        blocking_reason = blocking_reason,
        residual_expression = if (base$decomposable)
@@ -238,152 +282,6 @@ run_diagnostic_benchmark <- function(data, later_delta_auc, audit_status,
   )
 }
 
-check_survey_reparameterization <- function(data, outcome = "dx", weight = "weight",
-                                             strata = "stra", psu = "psu",
-                                             tol = 1e-8, design = NULL) {
-  required <- c(outcome, weight, strata, psu, "sex", "log_age", "log_bmi", "GLM7", "metab")
-  if (!all(required %in% names(data))) stop("missing survey reparameterization columns")
-  d <- data[stats::complete.cases(data[, required, drop = FALSE]), , drop = FALSE]
-  if (!nrow(d)) stop("no complete rows for survey reparameterization check")
-  des <- if (is.null(design)) make_survey_design(d, weight = weight, strata = strata, psu = psu) else design
-  if (nrow(des$variables) != nrow(d)) stop("reparameterization design and data rows differ")
-  f_index <- survey::svyglm(
-    stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + GLM7")),
-    design = des, family = stats::quasibinomial())
-  f_residual <- survey::svyglm(
-    stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + metab")),
-    design = des, family = stats::quasibinomial())
-  lp_index <- as.numeric(stats::predict(f_index, type = "link"))
-  lp_residual <- as.numeric(stats::predict(f_residual, type = "link"))
-  beta <- stats::coef(f_index)
-  gamma <- stats::coef(f_residual)
-  expected_names <- c("(Intercept)", "sexFemale", "log_age", "log_bmi", "GLM7")
-  residual_names <- c("(Intercept)", "sexFemale", "log_age", "log_bmi", "metab")
-  if (!all(expected_names %in% names(beta)) || !all(residual_names %in% names(gamma)))
-    stop("unexpected coefficient names in survey reparameterization check")
-  beta <- beta[expected_names]
-  gamma <- gamma[residual_names]
-  transform <- diag(5)
-  transform[3, 5] <- 1
-  transform[4, 5] <- 1
-  rownames(transform) <- residual_names
-  colnames(transform) <- expected_names
-  mapped_gamma <- as.numeric(transform %*% beta)
-  names(mapped_gamma) <- residual_names
-  mapped_vcov <- transform %*% stats::vcov(f_index)[expected_names, expected_names] %*% t(transform)
-  observed_vcov <- stats::vcov(f_residual)[residual_names, residual_names]
-  differences <- c(
-    linear_predictor = max(abs(lp_index - lp_residual)),
-    fitted_probability = max(abs(stats::plogis(lp_index) - stats::plogis(lp_residual))),
-    coefficient_mapping = max(abs(mapped_gamma - gamma)),
-    covariance_mapping = max(abs(mapped_vcov - observed_vcov))
-  )
-  list(
-    status = if (all(is.finite(differences)) && max(differences) <= tol)
-      "survey_weighted_equivalence_confirmed" else "survey_weighted_diagnostic_mismatch",
-    n = nrow(d), strata = length(unique(d[[strata]])), psu = length(unique(d[[psu]])),
-    design_df = survey::degf(des), tolerance = tol,
-    max_linear_predictor_difference = unname(differences[["linear_predictor"]]),
-    max_fitted_probability_difference = unname(differences[["fitted_probability"]]),
-    max_coefficient_mapping_difference = unname(differences[["coefficient_mapping"]]),
-    max_covariance_mapping_difference = unname(differences[["covariance_mapping"]]),
-    coefficient_index = as.list(beta), coefficient_residual = as.list(gamma),
-    coefficient_residual_mapped = as.list(mapped_gamma),
-    coefficient_mapping_matrix = unname(transform),
-    coefficient_mapping_rows = rownames(transform),
-    coefficient_mapping_columns = colnames(transform),
-    coefficient_mapping_equation = "gamma = K beta",
-    covariance_mapping_equation = "V_gamma = K V_beta K^T",
-    interpretation = paste(
-      "The same rows, survey design and quasibinomial link were used.",
-      "Weights, strata and PSUs do not alter the invertible column transformation."
-    )
-  )
-}
-
-run_unit_scaling_sensitivity <- function(development_data, later_data,
-                                         outcome = "dx", weight = "weight",
-                                         strata = "stra", psu = "psu",
-                                         development_design = NULL,
-                                         later_design = NULL) {
-  required <- c(outcome, weight, strata, psu, "sex", "log_age", "log_bmi", "GLM7",
-                "glucose_mg_dL", "insulin_pmol_L", "tg_mmol_L", "LDL", "hdl_mmol_L")
-  if (!all(required %in% names(development_data)) || !all(required %in% names(later_data)))
-    stop("missing unit-scaling sensitivity columns")
-  make_alt <- function(d) {
-    unit_factors <- c(insulin_pmol_per_uIU = 6,
-                      triglyceride_mg_dL_per_mmol_L = 88.57,
-                      cholesterol_mg_dL_per_mmol_L = 38.67)
-    d$insulin_uIU_mL_alt <- d$insulin_pmol_L / unit_factors[["insulin_pmol_per_uIU"]]
-    d$tg_mg_dL_alt <- d$tg_mmol_L * unit_factors[["triglyceride_mg_dL_per_mmol_L"]]
-    d$ldl_mg_dL_alt <- d$LDL * unit_factors[["cholesterol_mg_dL_per_mmol_L"]]
-    d$hdl_mg_dL_alt <- d$hdl_mmol_L * unit_factors[["cholesterol_mg_dL_per_mmol_L"]]
-    d$GLM7_alt_units <- log10(d$glucose_mg_dL) + log10(d$insulin_uIU_mL_alt) +
-      log10(d$tg_mg_dL_alt) + log10(d$ldl_mg_dL_alt) - log10(d$hdl_mg_dL_alt) +
-      d$log_age + d$log_bmi
-    attr(d, "unit_factors") <- unit_factors
-    d
-  }
-  p <- make_alt(development_data); l <- make_alt(later_data)
-  original_formula <- stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + GLM7"))
-  alternate_formula <- stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + GLM7_alt_units"))
-  p_design_alt <- development_design
-  if (!is.null(p_design_alt)) p_design_alt <- update(p_design_alt, GLM7_alt_units = p$GLM7_alt_units)
-  f_original <- fit_survey_logistic(p, original_formula, weight, strata, psu,
-                                    design = development_design)
-  f_alt <- fit_survey_logistic(p, alternate_formula, weight, strata, psu,
-                               design = p_design_alt)
-  lp_p_original <- as.numeric(stats::predict(f_original, newdata = p, type = "link"))
-  lp_p_alt <- as.numeric(stats::predict(f_alt, newdata = p, type = "link"))
-  lp_l_original <- as.numeric(stats::predict(f_original, newdata = l, type = "link"))
-  lp_l_alt_refit <- as.numeric(stats::predict(f_alt, newdata = l, type = "link"))
-  mm_bad <- stats::model.matrix(~ sex + log_age + log_bmi + GLM7_alt_units, data = l)
-  colnames(mm_bad)[colnames(mm_bad) == "GLM7_alt_units"] <- "GLM7"
-  lp_l_bad <- as.numeric(mm_bad[, names(stats::coef(f_original)), drop = FALSE] %*% stats::coef(f_original))
-  original_metrics <- prediction_metrics(l, lp_l_original, outcome, weight, strata, psu,
-                                          design = later_design)
-  refit_metrics <- prediction_metrics(l, lp_l_alt_refit, outcome, weight, strata, psu,
-                                       design = later_design)
-  bad_metrics <- prediction_metrics(l, lp_l_bad, outcome, weight, strata, psu,
-                                     design = later_design)
-  shift <- unique(round(p$GLM7_alt_units - p$GLM7, 12))
-  unit_factors <- attr(p, "unit_factors")
-  unit_shift <- if (length(shift) == 1L) shift[[1]] else NA_real_
-  expected_alternate_intercept <- unname(stats::coef(f_original)[["(Intercept)"]] -
-                                           unit_shift * stats::coef(f_original)[["GLM7"]])
-  list(
-    unit_factors = as.list(unit_factors),
-    unit_shift = unit_shift,
-    expected_unit_shift = log10(unit_factors[["triglyceride_mg_dL_per_mmol_L"]] /
-                                  unit_factors[["insulin_pmol_per_uIU"]]),
-    intercept_mapping_equation = "beta0_star = beta0 - k * beta_C when C_star = C + k",
-    expected_alternate_intercept = expected_alternate_intercept,
-    observed_alternate_intercept = unname(stats::coef(f_alt)[["(Intercept)"]]),
-    intercept_mapping_difference = abs(expected_alternate_intercept -
-                                         unname(stats::coef(f_alt)[["(Intercept)"]])),
-    development_refit_max_lp_difference = max(abs(lp_p_original - lp_p_alt)),
-    later_refit_max_lp_difference = max(abs(lp_l_original - lp_l_alt_refit)),
-    coefficient_difference = unname(stats::coef(f_original)[["GLM7"]] -
-                                      stats::coef(f_alt)[["GLM7_alt_units"]]),
-    original_later_metrics = as.list(original_metrics),
-    correctly_reparameterized_later_metrics = as.list(refit_metrics),
-    incorrectly_transferred_later_metrics = as.list(bad_metrics),
-    incorrect_transfer_lp_shift = unique(round(lp_l_bad - lp_l_original, 12))[[1]],
-    # v34: return the two later-period linear predictors so the caller can
-    # quantify decision consequences (threshold_shift_table) rather than only
-    # calibration metrics.
-    lp_l_correct = lp_l_original,
-    lp_l_incorrect_transfer = lp_l_bad,
-    lp_l_refit = lp_l_alt_refit,
-    interpretation = paste(
-      "Consistent unit conversion adds a constant to GLM7 and is absorbed by the intercept after refitting.",
-      "Applying coefficients to a differently scaled score without the mapped intercept preserves ranking but shifts probability calibration."
-    )
-  )
-}
-
-# Compatibility wrappers used by v28_analysis.R. These wrappers keep the
-# symbolic decomposition separate from the numerical design-space check.
 audit_glm7 <- function(data, tol = 1e-10) {
   required <- c("log_age", "log_bmi", "metab", "GLM7")
   if (!all(required %in% names(data))) stop("missing GLM7 audit columns")
@@ -477,6 +375,28 @@ audit_tolerance_grid <- function(index_terms, embedded_terms, model_terms = embe
 # and X_[W,I] gamma = X_[W,C] beta holds exactly for any beta. The map does
 # not make the rank-deficient beta_C itself uniquely estimable.
 # ---------------------------------------------------------------------------
+
+#' Audit a product-form index in a stated base model
+#'
+#' Product indices are handled by expanding them with the distributive law,
+#' subtracting interaction columns already embedded in the base, and then asking
+#' whether every remaining expansion term is expressible from the base columns.
+#' A wholly embedded product is rank-preserving. Otherwise, supported new product
+#' columns form a fixed-ratio bundle and a 1-df test, not \code{k} separate tests.
+#'
+#' @param index Character scalar, the index name.
+#' @param model_terms Character vector of base model columns.
+#' @param expansion A list with \code{intercept}, \code{linear} and
+#'   \code{products}, as returned by \code{\link{product_expansions}}.
+#' @param data Optional data frame for the numerical verification layer.
+#' @param tol Numerical tolerance.
+#' @return A list with \code{classification} (reducible_to_interaction or
+#'   outside_supported_class), \code{coefficient_map} and
+#'   \code{blocking_reason}.
+#' @export
+#' @examples
+#' audit_product_in_model("TyG_BMI", c("sex", "TyG", "BMI"),
+#'                        product_expansions()[["TyG_BMI"]])$classification
 audit_product_in_model <- function(index, model_terms, expansion,
                                    data = NULL, tol = 1e-10) {
   stopifnot(is.character(index), length(index) == 1L,
@@ -484,25 +404,30 @@ audit_product_in_model <- function(index, model_terms, expansion,
             is.list(expansion))
   const <- if (is.null(expansion$intercept)) 0 else as.numeric(expansion$intercept)
   linear <- expansion$linear
-  products <- expansion$products
+  all_products <- expansion$products
   if (is.null(linear)) linear <- setNames(numeric(0), character(0))
-  if (is.null(products)) products <- setNames(numeric(0), character(0))
-  stopifnot(is.numeric(linear), is.numeric(products))
-  if (anyDuplicated(names(linear)) || anyDuplicated(names(products)))
+  if (is.null(all_products)) all_products <- setNames(numeric(0), character(0))
+  stopifnot(is.numeric(linear), is.numeric(all_products))
+  if (anyDuplicated(names(linear)) || anyDuplicated(names(all_products)))
     stop("expansion term names must be unique")
-  # model.matrix-style column availability: factor sex contributes sexFemale.
+
+  # v35: interactions already in W are embedded, not new directions.
   model_cols <- ifelse(model_terms == "sex", "sexFemale", model_terms)
   available <- union(model_terms, model_cols)
   split_product <- function(nm) strsplit(nm, ":", fixed = TRUE)[[1]]
   unsupported_products <- character()
-  for (nm in names(products)) {
+  for (nm in names(all_products)) {
     parts <- split_product(nm)
-    if (length(parts) != 2L || !all(parts %in% available))
+    already_embedded <- nm %in% model_cols
+    if (!already_embedded && (length(parts) != 2L || !all(parts %in% available)))
       unsupported_products <- c(unsupported_products, nm)
   }
   unsupported_linear <- setdiff(names(linear), model_cols)
   reducible <- length(unsupported_products) == 0L && length(unsupported_linear) == 0L
-  classification <- if (reducible) "reducible_to_interaction" else "outside_supported_class"
+  products <- all_products[!(names(all_products) %in% model_cols), drop = FALSE]
+  classification <- if (!reducible) "outside_supported_class"
+    else if (!length(products)) "rank_preserving_exact"
+    else "reducible_to_interaction"
   blocking_reason <- if (reducible) NA_character_ else paste0(
     "expansion term(s) not expressible from the model columns: ",
     paste(c(unsupported_linear, unsupported_products), collapse = ", "))
@@ -517,12 +442,12 @@ audit_product_in_model <- function(index, model_terms, expansion,
     if (const != 0) K["(Intercept)", "C"] <- const
     for (j in model_cols) K[j, j] <- 1
     for (j in names(linear)) K[j, "C"] <- linear[[j]]
+    for (ik in intersect(names(all_products), model_cols))
+      K[ik, "C"] <- K[ik, "C"] + all_products[[ik]]
     for (ik in names(products)) K[ik, "C"] <- products[[ik]]
     coefficient_map <- K
   }
 
-  # Numerical verification layer (never the proof): rebuild C from the
-  # expansion on the supplied rows and compare the column spaces.
   identity_error <- NA_real_; rank_base <- NA_integer_
   rank_augmented <- NA_integer_; rank_interactions <- NA_integer_
   rank_gain <- NA_integer_; interaction_gain <- NA_integer_
@@ -541,14 +466,12 @@ audit_product_in_model <- function(index, model_terms, expansion,
       stats::as.formula(paste("~", paste(model_terms, collapse = " + "))),
       data = data)
     W <- W[, colnames(W) != "(Intercept)", drop = FALSE]
-    # The expansion can only be materialised when every term is expressible
-    # from the model columns; otherwise the audit stops at the boundary.
     if (reducible) {
       rebuilt <- rep(const, nrow(data))
       for (j in names(linear)) rebuilt <- rebuilt + linear[[j]] * column_of(j)
-      for (ik in names(products)) {
+      for (ik in names(all_products)) {
         parts <- split_product(ik)
-        rebuilt <- rebuilt + products[[ik]] * column_of(parts[1]) * column_of(parts[2])
+        rebuilt <- rebuilt + all_products[[ik]] * column_of(parts[1]) * column_of(parts[2])
       }
       identity_error <- suppressWarnings(max(abs(data[[index]] - rebuilt), na.rm = TRUE))
     }
@@ -567,8 +490,6 @@ audit_product_in_model <- function(index, model_terms, expansion,
         xi <- cbind(xb, Imat)
         rank_interactions <- rank_fun(xi)
         interaction_gain <- rank_interactions - rank_base
-        # C must lie (to tolerance) inside span[W, I]: the bundled column is a
-        # fixed combination of the interaction columns plus model columns.
         c_span_residual <- max(abs(qr.resid(qr(xi, tol = tol), data[[index]][keep])))
       } else if (reducible) {
         rank_interactions <- rank_base
@@ -581,17 +502,29 @@ audit_product_in_model <- function(index, model_terms, expansion,
   expansion_expression <- paste(c(
     if (const != 0) format(const, digits = 6),
     paste(format(linear, digits = 6), names(linear), sep = " x "),
-    paste(format(products, digits = 6), names(products), sep = " x ")), collapse = " + ")
+    paste(format(all_products, digits = 6), names(all_products), sep = " x ")), collapse = " + ")
   failure_states <- character()
   if (!reducible) failure_states <- c(failure_states, "outside_supported_class")
   if (is.finite(identity_error) && identity_error > tol)
     failure_states <- c(failure_states,
       sprintf("expansion does not reproduce the stored column (max |difference| = %.3e)", identity_error))
+  expected_rank_gain <- if (classification == "rank_preserving_exact") 0L
+    else if (classification %in% c("rank_adding_exact", "reducible_to_interaction")) 1L else NA_integer_
+  verification_status <- if (is.na(rank_gain) || is.na(expected_rank_gain)) "not_run"
+    else if (rank_gain == expected_rank_gain) "concordant" else "sample_degenerate_or_rank_mismatch"
+  if (identical(verification_status, "sample_degenerate_or_rank_mismatch"))
+    failure_states <- unique(c(failure_states, "symbolic_numeric_rank_mismatch"))
 
   list(
     index = index, classification = classification,
+    symbolic_classification = classification,
+    expected_rank_gain = expected_rank_gain,
+    observed_rank_gain = rank_gain,
+    verification_status = verification_status,
     coefficient_map = coefficient_map, blocking_reason = blocking_reason,
-    expansion = list(intercept = const, linear = linear, products = products),
+    expansion = list(intercept = const, linear = linear, products = all_products),
+    effective_expansion = list(intercept = const, linear = linear, products = products),
+    embedded_product_terms = intersect(names(all_products), model_cols),
     expansion_expression = if (nzchar(expansion_expression)) expansion_expression else "0",
     numerical_diagnostics = list(
       identity_error = identity_error, rank_base = rank_base,
@@ -599,6 +532,6 @@ audit_product_in_model <- function(index, model_terms, expansion,
       rank_gain = rank_gain, interaction_gain = interaction_gain,
       c_span_residual = c_span_residual, tolerance = tol),
     failure_states = failure_states,
-    symbolic_layer = "the distributive expansion and the map K follow from the registered definitions",
-    numerical_layer = "ranks and the identity error are computed on the supplied rows and verify, but do not prove, the symbolic claim")
+    symbolic_layer = "the distributive expansion, removal of embedded interactions and map K follow from the registered definitions",
+    numerical_layer = "ranks and identity error are computed on supplied rows and verify, but never determine or prove, the symbolic class")
 }

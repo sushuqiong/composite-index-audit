@@ -1,4 +1,30 @@
-# CompositeIndexAudit 0.34.0
+# CompositeIndexAudit 0.36.0
+
+## Decision integrity and strict examples
+
+* Added 270 deterministic expectations covering 100 log-base linear-predictor equivalences, 50 round trips, 40 five-field identity comparisons, 30 scale-error detections, 30 correct-column checks and 20 symbolic classifications on degenerate samples.
+* The runnable `vignette.R` now includes the manuscript's strict `DemoGLM7` public-API example with complete five-field keys for both the minimal and embedded bases.
+* Documentation now distinguishes a symbolic `rank_adding_exact` direction from observed sample rank and reports the exact bundled-versus-unrestricted interpretation for fixed-ratio interaction bundles.
+* Added deterministic recomputation of unweighted referral yield as `(368 - cases_missed) / n_flagged` and algebraic sensitivity for insulin conversion factor 6.945. No new NHANES model fit is claimed.
+* Validation uses R 4.5.2 with `--vanilla` to isolate user-profile and user-library state. The check command is `R CMD check --no-manual`; PDF-manual rendering is outside the available LaTeX environment.
+* The base R runner completed 30 test blocks and 329 expectations with no failures. Source installation, `vignette.R`, both standalone audit drivers and all 12 simulation cells (16,000 repetitions) exited normally. `R CMD check --no-manual` returned `Status: OK`. Unit-test coverage was measured as 54.90%; the covr process then exited abnormally, so this is not reported as a successful coverage gate or as meeting an 85% target.
+
+# CompositeIndexAudit 0.35.0
+
+## Certification and classification fixes
+
+* Symbolic classes no longer depend on observed QR rank; sample degeneration is reported separately as `verification_status` and `symbolic_numeric_rank_mismatch`.
+* `strict = TRUE` is now the default for registered and expression-based public audits. Incomplete five-field metadata return `not_certified` without a coefficient map. Legacy bare-name exploration requires explicit `strict = FALSE`.
+* `audit_fit(expression = ...)` now dispatches product expressions to the product audit and shares metadata matching with `audit_registered_index()`.
+* Product audits subtract interaction columns already present in the base; a wholly embedded product is `rank_preserving_exact`, not a new interaction bundle.
+* NLR and PLR are labelled as published standard forms; the constructed-illustration count is eight.
+* The threshold-shift analysis now emits its domain size, case count, unweighted PPV and both unweighted and survey-weighted net benefit directly, preventing denominator or weighting ambiguity.
+* The v35 simulation no longer assigns a zero target to a full-rank discordant composite; its bias and coverage are undefined rather than compared with the residual coefficient as if they shared an estimand.
+
+## Validation status of this source revision
+
+With R 4.5.2, the included base R runner executed all 24 test blocks and 59 expectations with no failures, and `R CMD check --no-manual` returned `Status: OK`. The original testthat-compatible files and optional standard entry point are retained. Source installation, Box 1, `vignette.R`, `test_audit.R` and `test_audit_fit.R` completed successfully. The complete simulation was separately rerun with R 4.6.2: all 16,000 replications completed and every assertion passed. NHANES outputs were not regenerated and remain archived v34 results. The maintainer email is `sushuqiong@sr.gxmu.edu.cn`; a standalone DESCRIPTION comment was removed for R 4.5 DCF compatibility, and the simulation aggregation now assigns the discordant composite target in the correct scope.
+
 
 ## New entry point
 

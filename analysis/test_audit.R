@@ -235,9 +235,10 @@ a_int <- audit_product_in_model(
   "LAP", c("sex", "waist_cm", "tg_mmol_L",
            "waist_cm:tg_mmol_L", "tg_mmol_L:sexFemale"),
   exps$LAP, data = d_int, tol = tol)
-check(a_int$classification == "reducible_to_interaction" &&
+check(a_int$classification == "rank_preserving_exact" &&
+        a_int$expected_rank_gain == 0L &&
         a_int$numerical_diagnostics$rank_gain == 0L,
-      "base already holding the interaction bundle: LAP adds no rank")
+      "base already holding the interaction bundle: LAP is rank preserving and adds no rank")
 
 # --- 12. v34: record-by-record registry concordance ---------------------------
 cc <- audit_registry_concordance(data = NULL, tol = tol)

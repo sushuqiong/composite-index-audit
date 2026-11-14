@@ -1,0 +1,4 @@
+# Optional standard entry point: rename to testthat.R when using testthat.
+library(testthat)
+library(CompositeIndexAudit)
+test_check("CompositeIndexAudit")

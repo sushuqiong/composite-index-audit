@@ -8,6 +8,6 @@ bibentry(
            Composite Indices Entered Alongside Their Own Components",
   author = person("Shuqiong", "Su"),
   year = "2026",
-  note = "R package version 0.34.0",
+  note = "R package version 0.36.0",
   url = "https://github.com/sushuqiong/composite-index-audit"
 )

@@ -24,7 +24,8 @@ v28_registry <- function() {
       "inflammation_hematologic", "inflammation_nutrition", "metabolic_sensitivity"),
     analysis_role = c(rep("primary_candidate", 24), "scale_sensitivity"),
     status = c(rep("published_formula", 3), rep("exploratory_constructed", 2),
-      rep("published_formula", 8), rep("exploratory_constructed", 8),
+      rep("published_formula", 8), rep("exploratory_constructed", 5),
+      rep("published_formula", 2), rep("exploratory_constructed", 1),
       rep("published_formula", 4)),
     formula = c(
       "metab + log10(age) + log10(BMI)",
@@ -71,7 +72,7 @@ v28_registry <- function() {
       "ref13_Krakauer2012ABSI", "ref14_Dobiasova2001AIP", "ref5_Matthews1985HOMA",
       "exploratory_CRP_albumin_ratio", "exploratory_monocyte_HDL_ratio", "exploratory_TyG_times_hsCRP",
       "exploratory_hsCRP_times_BMI", "exploratory_hsCRP_times_waist", "exploratory_SII_times_BMI",
-      "standard_NLR_definition", "standard_PLR_definition", "ref15_Hu2014SII", "ref16_Qi2016SIRI",
+      "ref32_Zahorec2001NLR", "ref33_Smith2009PLR", "ref15_Hu2014SII", "ref16_Qi2016SIRI",
       "ref17_Onodera1984PNI", "ref5_Matthews1985HOMA"),
     stringsAsFactors = FALSE
   )

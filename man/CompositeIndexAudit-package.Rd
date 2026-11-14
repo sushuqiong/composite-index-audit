@@ -43,7 +43,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Shuqiong Su \email{sushq@example.org}
+\strong{Maintainer}: Shuqiong Su \email{sushuqiong@sr.gxmu.edu.cn}
 
 }
 \keyword{internal}

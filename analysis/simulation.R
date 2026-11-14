@@ -16,7 +16,7 @@
 #   logit P(y = 1) = b0 + 0.5*w1 + 0.5*w2 + s*r
 #   b0 = logit(p0) centres the event probability at p0.
 #
-# CELLS (12; 8 x 1000 + 4 x 500 = 10,000 repetitions)
+# CELLS (12; 8 x 1000 + 4 x 2000 = 16,000 repetitions)
 #   iid block: n in {500, 2000} x p0 in {0.10, 0.30} x s in {0, 0.8}
 #   stress block (n = 1000, p0 = 0.20, s = 0.8 unless stated):
 #     clustered null        s = 0; 50 clusters, random intercept sd 0.5
@@ -28,7 +28,7 @@
 #     discordant            the composite column comes from a different
 #                           (mis-processing) pipeline than the component
 #                           columns in the model: C_bad = w1 + w2 + d1 + d2
-#                           with d_j = -0.10*r + N(0, 0.15^2), an informative
+#                           with the implemented error 0.03*r + N(0, 0.5^2), an informative
 #                           preprocessing error. C_bad is full rank, enters
 #                           the component-plus-composite fit and biases the
 #                           target coefficient; the component-plus-residual
@@ -43,8 +43,8 @@
 #   comp+residual    y ~ w1 + w2 + r      (the surviving representation)
 #
 # ESTIMAND: the coefficient on the model's distinguishing column - on C in
-#   comp+composite (true value 0: the composite adds nothing once its
-#   components are in the model) and on r in comp+residual (true value s).
+#   comp+composite (target 0 only when the registered identity holds) and on
+#   r in comp+residual (true value s). No common target is assigned to C and r.
 #   Where processing agrees, C is aliased and not estimable, which is what
 #   the audit predicts; bias is then not defined and the aliased rate is
 #   the performance measure.  A full-rank mis-processed composite is the
@@ -62,6 +62,7 @@ OUT <- Sys.getenv("CIA_OUT", file.path("..", "results"))
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 CODE_DIR <- Sys.getenv("CIA_CODE_DIR", ".")
 source(file.path(CODE_DIR, "algebra_audit.R"), local = TRUE)
+source(file.path(CODE_DIR, "public_api.R"), local = TRUE)
 
 REP_IID    <- 1000L
 REP_STRESS <- 2000L
@@ -104,7 +105,8 @@ one_rep <- function(cell) {
   f_base <- glm(y ~ v1 + v2, data = d, family = binomial())
   f_cc   <- glm(y ~ v1 + v2 + C, data = d, family = binomial())
   f_cr   <- glm(y ~ v1 + v2 + r, data = d, family = binomial())
-  truth_cc <- 0          # C adds nothing once its components are present
+  # A mis-processed full-rank C has no justified zero target in v36.
+  truth_cc <- if (cell$discordant) NA_real_ else 0
   truth_cr <- cell$s     # the residual direction's coefficient
 
   # audit of the composite actually being fitted
@@ -113,9 +115,9 @@ one_rep <- function(cell) {
                          data = d[, c("v1", "v2")]),
     error = function(e) list(classification = "error",
                              failure_states = conditionMessage(e)))
-  # column verification: does the realized C equal v1 + v2?
-  col_ok <- max(abs(d$C - (d$v1 + d$v2))) < 1e-8
-  failure_fired <- !col_ok                # verify_index_column would fail
+  # Exercise the public verification interface, not a hand-written proxy.
+  column_check <- verify_index_column(d, "C", expression = "v1 + v2", tol = 1e-8)
+  failure_fired <- !column_check$ok
 
   aliased <- !("C" %in% names(coef(f_cc))) || is.na(coef(f_cc)[["C"]])
   lp_id <- if (aliased)
@@ -213,8 +215,9 @@ for (cell in cells) {
   }
   emit("composite only", "auc_composite_only", "est_cc", "se_cc")
   emit("component only", "auc_component_only", "est_cr", "se_cr")
-  # truth 0 on the composite column; NA (not estimable) where it is aliased
-  emit("comp+composite", "auc_comp_composite", "est_cc", "se_cc", truth = 0)
+  # Zero target only under the registered identity; NA where aliased or discordant.
+  emit("comp+composite", "auc_comp_composite", "est_cc", "se_cc",
+       truth = if (cell$discordant) NA_real_ else 0)
   emit("comp+residual", "auc_comp_residual", "est_cr", "se_cr",
        truth = cell$s)
   # cell-level verification rates, stored on every row of the cell
@@ -233,7 +236,7 @@ for (cell in cells) {
 }
 
 sim <- do.call(rbind, rows)
-write.csv(sim, file.path(OUT, "v34_simulation_cells.csv"), row.names = FALSE)
+write.csv(sim, file.path(OUT, "v36_simulation_cells.csv"), row.names = FALSE)
 
 # ---------------- verification assertions ----------------------------------
 disc <- sim[sim$cell == "stress_discordant_preprocessing", ]
@@ -253,16 +256,12 @@ stopifnot(
   all(me$aliased_rate == 1),                   # shared error stays aliased
   all(disc$failure_state_rate == 1),                    # audit fires every rep
   all(disc$aliased_rate == 0),                          # full-rank bad column
-  disc$bias[disc$model == "comp+composite"] -
-    disc$bias[disc$model == "comp+residual"] > 0.03,    # carries the error
+  all(is.na(disc$bias[disc$model == "comp+composite"])), # no false zero target
+  all(is.na(disc$coverage[disc$model == "comp+composite"])),
   abs(disc$bias[disc$model == "comp+residual"]) < 0.02, # surviving fit clean
-  # Undercoverage is reported as measured, with its Monte Carlo standard
-  # error in Additional file 2; the claim is separation from nominal, not a
-  # round threshold chosen after seeing the result.
-  disc$coverage[disc$model == "comp+composite"] < 0.94,
   disc$coverage[disc$model == "comp+residual"] > 0.93
 )
 cat("\nSIMULATION ASSERTIONS PASSED: 12 cells,",
     8 * REP_IID + 4 * REP_STRESS, "repetitions; verification and stress",
     "behave as registered.\n")
-cat("=== v34 simulation done ===\n")
+cat("=== v36 simulation done ===\n")

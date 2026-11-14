@@ -21,9 +21,11 @@ test_that("the classification is one of four classes or an explicit state", {
 
 test_that("a registered ad-hoc expression is parsed and checked", {
   register_index("cia_test_sum", "tg_mmol_L + waist_cm", overwrite = TRUE)
-  a <- audit_registered_index("cia_test_sum", c("tg_mmol_L", "waist_cm"))
+  a <- suppressWarnings(audit_registered_index(
+    "cia_test_sum", c("tg_mmol_L", "waist_cm"), strict = FALSE))
   expect_equal(a$classification, "rank_preserving_exact")
-  a2 <- audit_registered_index("cia_test_sum", c("tg_mmol_L"))
+  a2 <- suppressWarnings(audit_registered_index(
+    "cia_test_sum", c("tg_mmol_L"), strict = FALSE))
   expect_equal(a2$classification, "rank_adding_exact")
 })
 

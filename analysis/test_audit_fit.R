@@ -55,8 +55,8 @@ d$pw <- runif(n, 0.5, 3); d$off <- rnorm(n, 0, 0.2)
 f_min  <- glm(dx ~ sex + log_age + log_bmi, data = d, family = binomial())
 f_comp <- glm(dx ~ sex + log_tg_mg + log_glucose_mg, data = d, family = binomial())
 
-a1 <- suppressWarnings(audit_fit(f_min, "TyG"))
-a2 <- suppressWarnings(audit_fit(f_comp, "TyG"))
+a1 <- suppressWarnings(audit_fit(f_min, "TyG", strict = FALSE))
+a2 <- suppressWarnings(audit_fit(f_comp, "TyG", strict = FALSE))
 check(identical(a1$classification, "rank_adding_exact"),
       "glm: TyG against the minimal base is rank_adding_exact")
 check(identical(a2$classification, "rank_preserving_exact"),
@@ -72,14 +72,14 @@ check(identical(a1$model_object$base_model_terms, c("sex", "log_age", "log_bmi")
 
 # ---- 2. lm, svyglm, coxph, survreg -----------------------------------------
 f_lm <- lm(log_bmi ~ sex + log_tg_mg + log_glucose_mg, data = d)
-check(identical(suppressWarnings(audit_fit(f_lm, "TyG"))$classification,
+check(identical(suppressWarnings(audit_fit(f_lm, "TyG", strict = FALSE))$classification,
                 "rank_preserving_exact"),
       "lm: same class as glm against the same base")
 
 des <- svydesign(ids = ~1, strata = NULL, weights = ~pw, data = d)
 f_svy <- svyglm(dx ~ sex + log_tg_mg + log_glucose_mg, design = des,
                 family = quasibinomial())
-a_svy <- suppressWarnings(audit_fit(f_svy, "TyG"))
+a_svy <- suppressWarnings(audit_fit(f_svy, "TyG", strict = FALSE))
 check(identical(a_svy$classification, "rank_preserving_exact"),
       "svyglm: TyG against its component base is rank_preserving_exact")
 check(grepl("survey design weights", a_svy$model_object$weights$weights_source),
@@ -87,14 +87,14 @@ check(grepl("survey design weights", a_svy$model_object$weights$weights_source),
 
 f_cox <- coxph(Surv(time, status) ~ sex + log_tg_mg + log_glucose_mg,
                data = d, weights = pw)
-a_cox <- suppressWarnings(audit_fit(f_cox, "TyG"))
+a_cox <- suppressWarnings(audit_fit(f_cox, "TyG", strict = FALSE))
 check(identical(a_cox$classification, "rank_preserving_exact"),
       "coxph: TyG against its component base is rank_preserving_exact")
 check(grepl("coxph", a_cox$model_object$weights$weights_source),
       "coxph: the weights report names survival case weights")
 
 f_sr <- survreg(Surv(time, status) ~ sex + log_tg_mg + log_glucose_mg, data = d)
-check(identical(suppressWarnings(audit_fit(f_sr, "TyG"))$classification,
+check(identical(suppressWarnings(audit_fit(f_sr, "TyG", strict = FALSE))$classification,
                 "rank_preserving_exact"),
       "survreg: TyG against its component base is rank_preserving_exact")
 
@@ -102,7 +102,7 @@ check(identical(suppressWarnings(audit_fit(f_sr, "TyG"))$classification,
 d2 <- d; d2$log_tg_mg_dup <- d2$log_tg_mg
 f_alias <- glm(dx ~ sex + log_tg_mg + log_glucose_mg + log_tg_mg_dup,
                data = d2, family = binomial())
-a_alias <- suppressWarnings(audit_fit(f_alias, "TyG"))
+a_alias <- suppressWarnings(audit_fit(f_alias, "TyG", strict = FALSE))
 check(length(a_alias$model_object$aliased_columns) > 0L,
       "aliasing: the fit reports an aliased column")
 check("aliased_columns_present" %in% a_alias$failure_states,
@@ -111,7 +111,7 @@ check("aliased_columns_present" %in% a_alias$failure_states,
 # ---- 4. offset --------------------------------------------------------------
 f_off <- glm(dx ~ sex + log_tg_mg + log_glucose_mg, data = d,
              family = binomial(), offset = off)
-a_off <- suppressWarnings(audit_fit(f_off, "TyG"))
+a_off <- suppressWarnings(audit_fit(f_off, "TyG", strict = FALSE))
 check(isTRUE(a_off$model_object$offset$has_offset), "offset: detected")
 check("offset_present" %in% a_off$failure_states,
       "offset: reported as an explicit failure state, never downgraded")
@@ -119,12 +119,12 @@ check("offset_present" %in% a_off$failure_states,
 # ---- 5. ad-hoc expressions, no registry entry needed ------------------------
 f_ad <- glm(dx ~ sex + tg_mmol_L + waist_cm, data = d, family = binomial())
 a_ad1 <- suppressWarnings(audit_fit(f_ad, "my_sum",
-                                    expression = "tg_mmol_L + waist_cm"))
+                                    expression = "tg_mmol_L + waist_cm", strict = FALSE))
 check(identical(a_ad1$classification, "rank_preserving_exact"),
       "ad-hoc expression: fully embedded in this base is rank_preserving_exact")
 f_ad2 <- glm(dx ~ sex + tg_mmol_L, data = d, family = binomial())
 a_ad2 <- suppressWarnings(audit_fit(f_ad2, "my_sum",
-                                    expression = "tg_mmol_L + waist_cm"))
+                                    expression = "tg_mmol_L + waist_cm", strict = FALSE))
 check(identical(a_ad2$classification, "rank_adding_exact"),
       "ad-hoc expression: partly embedded in this base is rank_adding_exact")
 err <- tryCatch(audit_fit(structure(list(), class = "nls"), "TyG"),
@@ -157,7 +157,7 @@ for (id in names(ref)) {
     error = function(e) NULL))
   if (is.null(fit)) next
   got <- suppressWarnings(tryCatch(
-    audit_fit(fit, base_id)$classification, error = function(e) NA_character_))
+    audit_fit(fit, base_id, strict = FALSE)$classification, error = function(e) NA_character_))
   want <- audit_one_record(id)$actual_class
   covered <- covered + 1L
   if (!identical(got, want))

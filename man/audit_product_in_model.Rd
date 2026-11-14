@@ -19,15 +19,15 @@ audit_product_in_model(index, model_terms, expansion, data = NULL, tol = 1e-10)
 \item{tol}{Numerical tolerance.}
 }
 \value{
-A list with \code{classification} (reducible_to_interaction or
-  outside_supported_class), \code{coefficient_map} and
-  \code{blocking_reason}.
+A list with \code{classification} (rank_preserving_exact,
+  reducible_to_interaction or outside_supported_class),
+  \code{coefficient_map} and \code{blocking_reason}.
 }
 \description{
-Product indices are handled by expanding them with the distributive law and
-then asking whether every expansion term is expressible from the base
-columns.  When it is, the index is a rank-one bundle of interactions and is
-a 1-df test, not \code{k} separate tests.
+Product indices are expanded with the distributive law after subtracting
+interaction columns already embedded in the base. A wholly embedded product is
+rank-preserving. Otherwise, supported new product columns form a fixed-ratio
+bundle and a 1-df test, not \code{k} separate tests.
 }
 \examples{
 audit_product_in_model("TyG_BMI", c("sex", "TyG", "BMI"),

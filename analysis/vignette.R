@@ -1,6 +1,6 @@
 # vignette.R  (PURE ASCII)  -  runs in a clean session without NHANES data
 #
-# Box 1 of the v34 manuscript, verbatim and self-contained: the example builds
+# Box 1 of the v36 manuscript, verbatim and self-contained: the example builds
 # its own synthetic data, so it runs from a fresh directory with
 #   Rscript vignette.R
 # Ten minutes, four audit classes, the coefficient map, the aliased
@@ -94,14 +94,32 @@ cat("LAP max |lp difference| under gamma = K beta:",
     max(abs(lp_aug - lp_map)), "\n")
 stopifnot(max(abs(lp_aug - lp_map)) < 1e-8)
 
+# --- strict public API: complete five-field identity for DemoGLM7 -------------
+register_index("DemoGLM7", "metab + log10(age) + log10(BMI)",
+  units = c(metab = "-", age = "years", BMI = "kg/m^2"), overwrite = TRUE)
+keys_min <- c(log_age = "age|log10|10|years|-",
+              log_bmi = "BMI|log10|10|kg/m^2|-")
+a <- audit_registered_index("DemoGLM7", keys_min, data = d)
+keys_full <- c(metab = "metab|identity|-|-|-", keys_min)
+b <- audit_registered_index("DemoGLM7", keys_full, data = d)
+print(a$classification)                # "rank_adding_exact"
+print(b$classification)                # "rank_preserving_exact"
+stopifnot(a$classification == "rank_adding_exact",
+          b$classification == "rank_preserving_exact",
+          a$term_matching$mode == "keyed", b$term_matching$mode == "keyed")
+
 # --- public API ---------------------------------------------------------------
 p <- parse_index_expression("TyG * BMI")
 print(p$status)                        # "product_expandable"
 stopifnot(p$status == "product_expandable", p$products[["TyG:BMI"]] == 1)
 
-register_index("DemoTyGBMI", "TyG * BMI")
+register_index("DemoTyGBMI", "TyG * BMI",
+               units = c(TyG = "-", BMI = "kg/m^2"))
 d$DemoTyGBMI <- d$TyG * d$BMI
-a_demo <- audit_registered_index("DemoTyGBMI", c("sex", "TyG", "BMI"), data = d)
+a_demo <- audit_registered_index(
+  "DemoTyGBMI",
+  c(sex = "sex|identity|-|-|factor(Male,Female)",
+    TyG = "TyG|identity|-|-|-", BMI = "BMI|identity|-|kg/m^2|-"), data = d)
 print(a_demo$classification)           # "reducible_to_interaction"
 stopifnot(a_demo$classification == "reducible_to_interaction")
 
