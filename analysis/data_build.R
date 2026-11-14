@@ -7,7 +7,7 @@
 # directory containing the official NHANES XPT files before sourcing; the
 # loader fails closed if the variable is unset.
 
-suppressPackageStartupMessages(library(haven))
+suppressPackageStartupMessages(library(foreign))
 
 DATA_ROOT <- Sys.getenv("CIA_DATA_ROOT", unset = "")
 if (!nzchar(DATA_ROOT))
@@ -18,7 +18,7 @@ if (!dir.exists(DATA_ROOT))
 read_unique <- function(file, cols) {
   p <- file.path(DATA_ROOT, file)
   if (!file.exists(p)) stop("missing official XPT: ", p)
-  x <- haven::read_xpt(p)
+  x <- foreign::read.xport(p)
   if (!"SEQN" %in% names(x) || anyDuplicated(x$SEQN))
     stop("SEQN is not unique: ", file)
   x[, cols, drop = FALSE]

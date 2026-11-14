@@ -20,7 +20,7 @@ Description: Composite indices are routinely entered into a regression
 License: MIT + file LICENSE
 Encoding: UTF-8
 Imports: stats
-Suggests: testthat (>= 3.0.0), haven, survival, digest, survey
+Suggests: testthat (>= 3.0.0), foreign, survival, digest, survey
 Collate:
     'aaa-package.R'
     'term_identity.R'

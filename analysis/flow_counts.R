@@ -4,7 +4,7 @@
 # reports 3,801 (period P) and 2,958 (period L) analysed adults and a reviewer
 # queried whether a fasting subsample of that size is plausible.  This script
 # walks from the official XPT file to the analysed row, one exclusion at a
-# time, and writes the whole ladder to v34_flow_counts.csv.
+# time, and writes the whole ladder to nhanes_flow_counts.csv.
 #
 # It also records, by name, the survey variables that were previously only
 # described in words ("a positive fasting weight"): the fasting subsample
@@ -16,7 +16,7 @@
 # Run:
 #   CIA_CODE_DIR=... CIA_DATA_ROOT=... CIA_OUT=... Rscript flow_counts.R
 
-suppressPackageStartupMessages({ library(haven); library(survey) })
+suppressPackageStartupMessages({ library(foreign); library(survey) })
 
 need <- function(nm) {
   v <- Sys.getenv(nm, unset = "")
@@ -44,7 +44,7 @@ spec <- function(period) {
 read_one <- function(file, cols) {
   p <- file.path(DATA_ROOT, file)
   if (!file.exists(p)) stop("missing official XPT: ", p)
-  x <- haven::read_xpt(p)
+  x <- foreign::read.xport(p)
   x[, intersect(cols, names(x)), drop = FALSE]
 }
 
@@ -139,5 +139,5 @@ for (period in c("P", "L")) {
 }
 cat("\nflow_counts: analysed rows reproduce build_period() exactly\n")
 
-write.csv(flow, file.path(OUT, "v34_flow_counts.csv"), row.names = FALSE)
-cat("wrote v34_flow_counts.csv\n")
+write.csv(flow, file.path(OUT, "nhanes_flow_counts.csv"), row.names = FALSE)
+cat("wrote nhanes_flow_counts.csv\n")

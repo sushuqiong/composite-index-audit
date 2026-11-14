@@ -76,11 +76,11 @@ for (x in list(list("audit_additive_nodata", t_audit_nodata),
 }
 options(repos = c(CRAN = "https://cloud.r-project.org"))
 dep_counts <- unique(unlist(tools::package_dependencies(
-  c("survey", "haven", "digest"), db = utils::installed.packages(),
+  c("survey", "foreign", "digest"), db = utils::installed.packages(),
   recursive = TRUE)))
 emit("runtime", "dependency_footprint", "recursive_package_count",
      as.character(length(dep_counts)),
-     paste("survey + haven + digest:", paste(sort(dep_counts), collapse = ", ")))
+     paste("survey + foreign + digest:", paste(sort(dep_counts), collapse = ", ")))
 emit("runtime", "audit_versus_fit_ratio", "seconds_ratio",
      sprintf("%.1f", t_glm[["seconds"]] / t_audit_nodata[["seconds"]]),
      "a no-data audit is this many times faster than one glm fit")
@@ -158,6 +158,6 @@ emit("tool_comparison", "unit_conversion", "alias/qr/kappa/vif/deriv",
 
 res <- do.call(rbind, rows)
 print(res, row.names = FALSE)
-write.csv(res, file.path(OUT, "v34_benchmarks_and_tool_comparison.csv"),
+write.csv(res, file.path(OUT, "nhanes_benchmarks_and_tool_comparison.csv"),
           row.names = FALSE, na = "")
-cat("\n=== v34 benchmarks done ===\n")
+cat("\n=== Benchmarks completed ===\n")

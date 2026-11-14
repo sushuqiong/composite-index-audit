@@ -2,10 +2,15 @@
 
 ## Decision integrity and strict examples
 
+* Replaced `haven` with the base/recommended `foreign` XPT reader, eliminating the observed R exit crash. All 24 official files passed an independent parser cross-check for dimensions, SEQN order, missingness and numerical agreement within 1e-12.
+* Reran the complete NHANES pipeline with neutral `nhanes_` output names. Corrected the former AUC labelling error: `P_apparent_auc_*` now contains development-period apparent AUC and `L_auc_*` contains frozen-coefficient later-period transported AUC.
+* Added the explicitly post hoc HbA1c >=5.7% outcome sensitivity driver and complete 24-index output. All contrasts have 1,000 valid paired Rao-Wu replicates; HbA1c is not an index component, and the outcome combines prediabetes- and diabetes-range values.
+* Restored synthetic regression tests for survey reparameterization and unit-scaling helpers.
+
 * Added 270 deterministic expectations covering 100 log-base linear-predictor equivalences, 50 round trips, 40 five-field identity comparisons, 30 scale-error detections, 30 correct-column checks and 20 symbolic classifications on degenerate samples.
 * The runnable `vignette.R` now includes the manuscript's strict `DemoGLM7` public-API example with complete five-field keys for both the minimal and embedded bases.
 * Documentation now distinguishes a symbolic `rank_adding_exact` direction from observed sample rank and reports the exact bundled-versus-unrestricted interpretation for fixed-ratio interaction bundles.
-* Added deterministic recomputation of unweighted referral yield as `(368 - cases_missed) / n_flagged` and algebraic sensitivity for insulin conversion factor 6.945. No new NHANES model fit is claimed.
+* Added deterministic recomputation of unweighted referral yield as `(368 - cases_missed) / n_flagged` and algebraic sensitivity for insulin conversion factor 6.945. The current release subsequently reran the complete NHANES analysis; the 6.945 calculation remains an algebraic sensitivity without a new threshold table.
 * Validation uses R 4.5.2 with `--vanilla` to isolate user-profile and user-library state. The check command is `R CMD check --no-manual`; PDF-manual rendering is outside the available LaTeX environment.
 * The base R runner completed 30 test blocks and 329 expectations with no failures. Source installation, `vignette.R`, both standalone audit drivers and all 12 simulation cells (16,000 repetitions) exited normally. `R CMD check --no-manual` returned `Status: OK`. Unit-test coverage was measured as 54.90%; the covr process then exited abnormally, so this is not reported as a successful coverage gate or as meeting an 85% target.
 

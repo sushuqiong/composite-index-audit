@@ -64,11 +64,13 @@ five-field identity, scale-error detection and symbolic classification on degene
 samples. The strict public example now uses complete five-field term keys. Validation
 logs in the submission package report the commands actually executed with R 4.5.2;
 `R CMD check --no-manual` omits PDF-manual rendering because a LaTeX toolchain is not
-available. The reported NHANES analyses were produced by the preceding release; the
-current release reproduces the registry classification, while this revision's derived
-threshold-yield and unit-factor quantities are deterministic recalculations from the
-archived aggregate results. The current 16,000-replication simulation was rerun with
-R 4.5.2.
+available. The current release reran the complete NHANES analysis with
+`foreign::read.xport`, and field-by-field comparison found no unannounced numerical
+change. Development-period apparent AUC is now explicitly separated from later-period
+transported AUC. A post hoc HbA1c >=5.7% sensitivity analysis evaluates all 24 primary
+indices on new shared domains, with 1,000 valid paired replicates per contrast and
+separate 24-index and 17-non-glucose-index multiplicity families. The current
+16,000-replication simulation was also rerun with R 4.5.2.
 
 ## Layout
 
@@ -85,7 +87,7 @@ R 4.5.2.
   (reproduction of published model specifications), `benchmarks.R`
   (runtime and the measured comparison with `alias()`, QR rank, `kappa()`,
   `car::vif()` and `deriv()`), `flow_counts.R`, `verify_unit_factor.R`,
-  `reclassify.R`, `dump_registry.R`, the standalone driver `test_audit.R`
+  `reclassify.R`, `dump_registry.R`, `hba1c_outcome.R`, the standalone drivers `test_audit.R` and `test_analysis_helpers.R`
   and the runnable example `vignette.R` (Box 1 of the manuscript). The
   analysis scripts are self-contained script versions that `source()` each
   other; they do not require the package to be installed.
@@ -101,7 +103,8 @@ hard-coded. They write to `CIA_OUT` (default `../results`).
 The runtime package imports base R `stats`. The formal check executes the
 testthat-compatible files with the included base R runner; the optional standard
 entry point uses `testthat`. Model-class tests additionally use `survey` and
-`survival`. The NHANES analysis scripts use `haven`, `survey` and `digest`.
+`survival`. The NHANES analysis scripts use the base/recommended `foreign`
+XPT reader, `survey` and `digest`; they do not load `haven`.
 No compiled code is included.
 
 ## License

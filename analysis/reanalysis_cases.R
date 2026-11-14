@@ -191,5 +191,5 @@ for (period in c("P", "L")) {
 res <- do.call(rbind, rows)
 
 print(res, row.names = FALSE)
-write.csv(res, file.path(OUT, "v34_reanalysis_cases.csv"), row.names = FALSE, na = "")
-cat("\n=== v34 reanalysis cases done ===\n")
+write.csv(res, file.path(OUT, "nhanes_reanalysis_cases.csv"), row.names = FALSE, na = "")
+cat("\n=== NHANES reanalysis cases completed ===\n")

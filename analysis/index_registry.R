@@ -24,9 +24,8 @@ v28_registry <- function() {
       "inflammation_hematologic", "inflammation_nutrition", "metabolic_sensitivity"),
     analysis_role = c(rep("primary_candidate", 24), "scale_sensitivity"),
     status = c(rep("published_formula", 3), rep("exploratory_constructed", 2),
-      rep("published_formula", 8), rep("exploratory_constructed", 5),
-      rep("published_formula", 2), rep("exploratory_constructed", 1),
-      rep("published_formula", 4)),
+      rep("published_formula", 8), rep("exploratory_constructed", 6),
+      rep("published_formula", 6)),
     formula = c(
       "metab + log10(age) + log10(BMI)",
       "ln(TG_mg_dL*glucose_mg_dL/2)", "TyG*BMI", "TyG*waist_cm", "TyG*(waist_cm/height_cm)",
@@ -214,6 +213,9 @@ component_scale_in_base <- function(component_terms) {
 #' head(index_registry()[, c("index", "reference_class", "provenance")])
 index_registry <- function() {
   reg <- v28_registry()
+  stopifnot(sum(reg$status == "exploratory_constructed") == 8L,
+            reg$status[reg$index == "SII_BMI"] == "exploratory_constructed",
+            all(reg$status[reg$index %in% c("NLR", "PLR")] == "published_formula"))
   cls <- reference_audit_classes()
   stopifnot(all(reg$index %in% names(cls)))
   reg$reference_class <- unname(cls[reg$index])

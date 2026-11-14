@@ -13,7 +13,7 @@
 #     -> compared against the reference label
 #
 # test_audit.R requires every record to be concordant.  The agreement
-# table is exported by build_results.R as v34_registry_audit_concordance.csv.
+# table is exported by build_results.R as nhanes_registry_audit_concordance.csv.
 
 # ---------------------------------------------------------------------------
 # Literal algebraic decompositions C = sum(b_k t_k) + const, in model-column

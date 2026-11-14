@@ -282,6 +282,149 @@ run_diagnostic_benchmark <- function(data, later_delta_auc, audit_status,
   )
 }
 
+# Survey-weighted companion to check_reparameterization(). Kept with the
+# analysis helpers because it requires the optional survey dependency.
+check_survey_reparameterization <- function(data, outcome = "dx", weight = "weight",
+                                             strata = "stra", psu = "psu",
+                                             tol = 1e-8, design = NULL) {
+  required <- c(outcome, weight, strata, psu, "sex", "log_age", "log_bmi", "GLM7", "metab")
+  if (!all(required %in% names(data))) stop("missing survey reparameterization columns")
+  d <- data[stats::complete.cases(data[, required, drop = FALSE]), , drop = FALSE]
+  if (!nrow(d)) stop("no complete rows for survey reparameterization check")
+  des <- if (is.null(design)) make_survey_design(d, weight = weight, strata = strata, psu = psu) else design
+  if (nrow(des$variables) != nrow(d)) stop("reparameterization design and data rows differ")
+  f_index <- survey::svyglm(
+    stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + GLM7")),
+    design = des, family = stats::quasibinomial())
+  f_residual <- survey::svyglm(
+    stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + metab")),
+    design = des, family = stats::quasibinomial())
+  lp_index <- as.numeric(stats::predict(f_index, type = "link"))
+  lp_residual <- as.numeric(stats::predict(f_residual, type = "link"))
+  beta <- stats::coef(f_index)
+  gamma <- stats::coef(f_residual)
+  expected_names <- c("(Intercept)", "sexFemale", "log_age", "log_bmi", "GLM7")
+  residual_names <- c("(Intercept)", "sexFemale", "log_age", "log_bmi", "metab")
+  if (!all(expected_names %in% names(beta)) || !all(residual_names %in% names(gamma)))
+    stop("unexpected coefficient names in survey reparameterization check")
+  beta <- beta[expected_names]
+  gamma <- gamma[residual_names]
+  transform <- diag(5)
+  transform[3, 5] <- 1
+  transform[4, 5] <- 1
+  rownames(transform) <- residual_names
+  colnames(transform) <- expected_names
+  mapped_gamma <- as.numeric(transform %*% beta)
+  names(mapped_gamma) <- residual_names
+  mapped_vcov <- transform %*% stats::vcov(f_index)[expected_names, expected_names] %*% t(transform)
+  observed_vcov <- stats::vcov(f_residual)[residual_names, residual_names]
+  differences <- c(
+    linear_predictor = max(abs(lp_index - lp_residual)),
+    fitted_probability = max(abs(stats::plogis(lp_index) - stats::plogis(lp_residual))),
+    coefficient_mapping = max(abs(mapped_gamma - gamma)),
+    covariance_mapping = max(abs(mapped_vcov - observed_vcov))
+  )
+  list(
+    status = if (all(is.finite(differences)) && max(differences) <= tol)
+      "survey_weighted_equivalence_confirmed" else "survey_weighted_diagnostic_mismatch",
+    n = nrow(d), strata = length(unique(d[[strata]])), psu = length(unique(d[[psu]])),
+    design_df = survey::degf(des), tolerance = tol,
+    max_linear_predictor_difference = unname(differences[["linear_predictor"]]),
+    max_fitted_probability_difference = unname(differences[["fitted_probability"]]),
+    max_coefficient_mapping_difference = unname(differences[["coefficient_mapping"]]),
+    max_covariance_mapping_difference = unname(differences[["covariance_mapping"]]),
+    coefficient_index = as.list(beta), coefficient_residual = as.list(gamma),
+    coefficient_residual_mapped = as.list(mapped_gamma),
+    coefficient_mapping_matrix = unname(transform),
+    coefficient_mapping_rows = rownames(transform),
+    coefficient_mapping_columns = colnames(transform),
+    coefficient_mapping_equation = "gamma = K beta",
+    covariance_mapping_equation = "V_gamma = K V_beta K^T",
+    interpretation = paste(
+      "The same rows, survey design and quasibinomial link were used.",
+      "Weights, strata and PSUs do not alter the invertible column transformation."
+    )
+  )
+}
+
+run_unit_scaling_sensitivity <- function(development_data, later_data,
+                                         outcome = "dx", weight = "weight",
+                                         strata = "stra", psu = "psu",
+                                         development_design = NULL,
+                                         later_design = NULL) {
+  required <- c(outcome, weight, strata, psu, "sex", "log_age", "log_bmi", "GLM7",
+                "glucose_mg_dL", "insulin_pmol_L", "tg_mmol_L", "LDL", "hdl_mmol_L")
+  if (!all(required %in% names(development_data)) || !all(required %in% names(later_data)))
+    stop("missing unit-scaling sensitivity columns")
+  make_alt <- function(d) {
+    unit_factors <- c(insulin_pmol_per_uIU = 6,
+                      triglyceride_mg_dL_per_mmol_L = 88.57,
+                      cholesterol_mg_dL_per_mmol_L = 38.67)
+    d$insulin_uIU_mL_alt <- d$insulin_pmol_L / unit_factors[["insulin_pmol_per_uIU"]]
+    d$tg_mg_dL_alt <- d$tg_mmol_L * unit_factors[["triglyceride_mg_dL_per_mmol_L"]]
+    d$ldl_mg_dL_alt <- d$LDL * unit_factors[["cholesterol_mg_dL_per_mmol_L"]]
+    d$hdl_mg_dL_alt <- d$hdl_mmol_L * unit_factors[["cholesterol_mg_dL_per_mmol_L"]]
+    d$GLM7_alt_units <- log10(d$glucose_mg_dL) + log10(d$insulin_uIU_mL_alt) +
+      log10(d$tg_mg_dL_alt) + log10(d$ldl_mg_dL_alt) - log10(d$hdl_mg_dL_alt) +
+      d$log_age + d$log_bmi
+    attr(d, "unit_factors") <- unit_factors
+    d
+  }
+  p <- make_alt(development_data); l <- make_alt(later_data)
+  original_formula <- stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + GLM7"))
+  alternate_formula <- stats::as.formula(paste(outcome, "~ sex + log_age + log_bmi + GLM7_alt_units"))
+  p_design_alt <- development_design
+  if (!is.null(p_design_alt)) p_design_alt <- update(p_design_alt, GLM7_alt_units = p$GLM7_alt_units)
+  f_original <- fit_survey_logistic(p, original_formula, weight, strata, psu,
+                                    design = development_design)
+  f_alt <- fit_survey_logistic(p, alternate_formula, weight, strata, psu,
+                               design = p_design_alt)
+  lp_p_original <- as.numeric(stats::predict(f_original, newdata = p, type = "link"))
+  lp_p_alt <- as.numeric(stats::predict(f_alt, newdata = p, type = "link"))
+  lp_l_original <- as.numeric(stats::predict(f_original, newdata = l, type = "link"))
+  lp_l_alt_refit <- as.numeric(stats::predict(f_alt, newdata = l, type = "link"))
+  mm_bad <- stats::model.matrix(~ sex + log_age + log_bmi + GLM7_alt_units, data = l)
+  colnames(mm_bad)[colnames(mm_bad) == "GLM7_alt_units"] <- "GLM7"
+  lp_l_bad <- as.numeric(mm_bad[, names(stats::coef(f_original)), drop = FALSE] %*% stats::coef(f_original))
+  original_metrics <- prediction_metrics(l, lp_l_original, outcome, weight, strata, psu,
+                                          design = later_design)
+  refit_metrics <- prediction_metrics(l, lp_l_alt_refit, outcome, weight, strata, psu,
+                                       design = later_design)
+  bad_metrics <- prediction_metrics(l, lp_l_bad, outcome, weight, strata, psu,
+                                     design = later_design)
+  shift <- unique(round(p$GLM7_alt_units - p$GLM7, 12))
+  unit_factors <- attr(p, "unit_factors")
+  unit_shift <- if (length(shift) == 1L) shift[[1]] else NA_real_
+  expected_alternate_intercept <- unname(stats::coef(f_original)[["(Intercept)"]] -
+                                           unit_shift * stats::coef(f_original)[["GLM7"]])
+  list(
+    unit_factors = as.list(unit_factors),
+    unit_shift = unit_shift,
+    expected_unit_shift = log10(unit_factors[["triglyceride_mg_dL_per_mmol_L"]] /
+                                  unit_factors[["insulin_pmol_per_uIU"]]),
+    intercept_mapping_equation = "beta0_star = beta0 - k * beta_C when C_star = C + k",
+    expected_alternate_intercept = expected_alternate_intercept,
+    observed_alternate_intercept = unname(stats::coef(f_alt)[["(Intercept)"]]),
+    intercept_mapping_difference = abs(expected_alternate_intercept -
+                                         unname(stats::coef(f_alt)[["(Intercept)"]])),
+    development_refit_max_lp_difference = max(abs(lp_p_original - lp_p_alt)),
+    later_refit_max_lp_difference = max(abs(lp_l_original - lp_l_alt_refit)),
+    coefficient_difference = unname(stats::coef(f_original)[["GLM7"]] -
+                                      stats::coef(f_alt)[["GLM7_alt_units"]]),
+    original_later_metrics = as.list(original_metrics),
+    correctly_reparameterized_later_metrics = as.list(refit_metrics),
+    incorrectly_transferred_later_metrics = as.list(bad_metrics),
+    incorrect_transfer_lp_shift = unique(round(lp_l_bad - lp_l_original, 12))[[1]],
+    lp_l_correct = lp_l_original,
+    lp_l_incorrect_transfer = lp_l_bad,
+    lp_l_refit = lp_l_alt_refit,
+    interpretation = paste(
+      "Consistent unit conversion adds a constant to GLM7 and is absorbed by the intercept after refitting.",
+      "Applying coefficients to a differently scaled score without the mapped intercept preserves ranking but shifts probability calibration."
+    )
+  )
+}
+
 audit_glm7 <- function(data, tol = 1e-10) {
   required <- c("log_age", "log_bmi", "metab", "GLM7")
   if (!all(required %in% names(data))) stop("missing GLM7 audit columns")

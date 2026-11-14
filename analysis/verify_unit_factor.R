@@ -10,7 +10,7 @@
 # alternative that the code does NOT use.
 #
 # Run: CIA_OUT=... Rscript verify_unit_factor.R   (no NHANES data needed;
-# the empirical check is read back from v34_unit_scaling.csv when present.)
+# the empirical check is read back from nhanes_unit_scaling.csv when present.)
 
 OUT <- Sys.getenv("CIA_OUT", unset = "")
 if (!nzchar(OUT)) stop("set CIA_OUT before running verify_unit_factor.R")
@@ -59,7 +59,7 @@ cat("k if insulin were converted with 6.945     = log10(88.57 / 6.945) =",
 
 # ---- empirical cross-check against the measured shift ----------------------
 emp <- NA_real_
-p <- file.path(OUT, "v34_unit_scaling.csv")
+p <- file.path(OUT, "nhanes_unit_scaling.csv")
 if (file.exists(p)) {
   u <- read.csv(p, stringsAsFactors = FALSE)
   row <- u[u$quantity == "unit_shift", ]
@@ -70,7 +70,7 @@ if (is.finite(emp)) {
   stopifnot(abs(emp - k_analytic) < 1e-9)
   cat("analytic k reproduces the measured shift\n")
 } else {
-  cat("v34_unit_scaling.csv not found; analytic derivation only\n")
+  cat("nhanes_unit_scaling.csv not found; analytic derivation only\n")
 }
 
 out <- data.frame(
@@ -97,5 +97,5 @@ out <- data.frame(
             if (is.finite(emp)) format(emp, digits = 15) else "not measured",
             if (is.finite(emp)) format(k_analytic - emp, digits = 3) else "NA"),
   stringsAsFactors = FALSE)
-write.csv(out, file.path(OUT, "v34_unit_factor_derivation.csv"), row.names = FALSE)
-cat("wrote v34_unit_factor_derivation.csv\n")
+write.csv(out, file.path(OUT, "nhanes_unit_factor_derivation.csv"), row.names = FALSE)
+cat("wrote nhanes_unit_factor_derivation.csv\n")

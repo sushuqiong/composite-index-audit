@@ -24,7 +24,7 @@
 # The coarse four-class label is preserved unchanged, and the script asserts
 # that collapsing the refined label recovers it, so no existing result moves.
 
-suppressPackageStartupMessages(library(haven))
+# No XPT reader is needed: this script audits registered expressions only.
 CD <- Sys.getenv("CIA_CODE_DIR", ".")
 OUT <- Sys.getenv("CIA_OUT", ".")
 if (!nzchar(CD) || !nzchar(OUT))
@@ -118,5 +118,5 @@ for (b in unique(tab$base)) {
 cat("\nreclassify: coarse labels preserved; outside split into",
     paste(sort(unique(tab$class_refined[tab$class_coarse == "outside_supported_class"])),
           collapse = ", "), "\n")
-write.csv(tab, file.path(OUT, "v34_reclassified_classes.csv"), row.names = FALSE)
-cat("wrote v34_reclassified_classes.csv\n")
+write.csv(tab, file.path(OUT, "nhanes_reclassified_classes.csv"), row.names = FALSE)
+cat("wrote nhanes_reclassified_classes.csv\n")

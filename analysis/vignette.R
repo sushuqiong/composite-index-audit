@@ -1,6 +1,6 @@
 # vignette.R  (PURE ASCII)  -  runs in a clean session without NHANES data
 #
-# Box 1 of the v36 manuscript, verbatim and self-contained: the example builds
+# Box 1 of the manuscript, verbatim and self-contained: the example builds
 # its own synthetic data, so it runs from a fresh directory with
 #   Rscript vignette.R
 # Ten minutes, four audit classes, the coefficient map, the aliased
