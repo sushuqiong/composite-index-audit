@@ -1,6 +1,6 @@
 # composite-index-audit
 
-R package **CompositeIndexAudit** (version 0.36.0): pre-fitting
+R package **CompositeIndexAudit** (version 0.39.0): pre-fitting
 algebraic classification of composite indices entered alongside their own
 components in a regression model.
 
@@ -59,18 +59,19 @@ requires a named vector of five-field term keys and declared units. Incomplete
 metadata return `not_certified`; `strict = FALSE` is reserved for explicitly
 exploratory legacy comparisons.
 
-Version 0.36.0 adds 270 decision-integrity expectations for log-base conversion,
-five-field identity, scale-error detection and symbolic classification on degenerate
-samples. The strict public example now uses complete five-field term keys. Validation
-logs in the submission package report the commands actually executed with R 4.5.2;
-`R CMD check --no-manual` omits PDF-manual rendering because a LaTeX toolchain is not
-available. The current release reran the complete NHANES analysis with
-`foreign::read.xport`, and field-by-field comparison found no unannounced numerical
-change. Development-period apparent AUC is now explicitly separated from later-period
-transported AUC. A post hoc HbA1c >=5.7% sensitivity analysis evaluates all 24 primary
-indices on new shared domains, with 1,000 valid paired replicates per contrast and
-separate 24-index and 17-non-glucose-index multiplicity families. The current
-16,000-replication simulation was also rerun with R 4.5.2.
+Version 0.39.0 separates the declared symbolic class, certification of the supplied
+column, observed sample rank and numerical fit state. `verify_index_column()`
+returns `input_certification`, `verification_status` and `failure_states`; a
+mismatched supplied column therefore need not change the declared class or prevent
+model fitting. Boundary tests cover composite base expressions, no-intercept
+models, categorical encoding, existing interactions, centering, unit mismatch and
+coefficient mismatch. The analysis drivers also provide a common-domain alias/QR
+comparison, a covariance-referenced CVAI decomposition and survey-weighted
+threshold/net-benefit sensitivity analyses.
+
+The earlier DOI 10.5281/zenodo.24217746 applies only to archived version 0.36.0.
+Do not assign it to the 0.39.0 source or results. Validation claims for this
+submission are limited to the logs produced from the final 0.39.0 source archive.
 
 ## Layout
 

@@ -38,12 +38,16 @@ test_that("an unsupported model class is refused, not silently audited", {
   expect_error(audit_fit(f, "TyG", strict = FALSE), "unsupported model class")
 })
 
-test_that("an offset is reported as a confound and never downgraded", {
+test_that("an offset is reported without presuming component redundancy", {
   f <- glm(dx ~ sex + log_age + log_bmi, data = d, family = binomial(),
            offset = rep(0.1, n))
   a <- suppressWarnings(audit_fit(f, "TyG", strict = FALSE))
-  expect_true(isTRUE(a$model_object$offset$offset_confound))
+  expect_false(isTRUE(a$model_object$offset$offset_confound))
+  expect_true(isTRUE(a$model_object$offset$offset_review_required))
+  expect_identical(a$model_object$offset$fixed_coefficient, 1)
+  expect_match(a$model_object$offset$note, "does not prove redundancy")
   expect_true("offset_present" %in% a$failure_states)
+  expect_identical(a$classification, "rank_adding_exact")
 })
 
 test_that("a fitted-model audit agrees with the registry audit", {

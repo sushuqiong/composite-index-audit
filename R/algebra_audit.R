@@ -57,10 +57,17 @@ audit_composite_index <- function(index_terms, embedded_terms,
   b <- setNames(numeric(length(all_terms)), all_terms); b[names(index_terms)] <- index_terms
   e <- setNames(numeric(length(all_terms)), all_terms); e[names(embedded_terms)] <- embedded_terms
   residual <- b - e
+  # The declared coefficient identity is symbolic: a numerical tolerance must
+  # never turn a small but nonzero direction into zero. The numerical tolerance
+  # is reserved for QR rank, reconstruction and fitted-prediction diagnostics.
+  coefficient_equal <- function(x, y) {
+    length(x) == length(y) && identical(names(x), names(y)) &&
+      all(is.finite(x)) && all(is.finite(y)) && all(x == y)
+  }
   embedded_match <- all(names(embedded_terms) %in% names(index_terms)) &&
-    all(abs(index_terms[names(embedded_terms)] - embedded_terms) <= tol)
+    coefficient_equal(index_terms[names(embedded_terms)], embedded_terms)
   model_match <- setequal(names(model_terms), names(embedded_terms)) &&
-    all(abs(model_terms[names(embedded_terms)] - embedded_terms) <= tol)
+    coefficient_equal(model_terms[names(embedded_terms)], embedded_terms)
   exact <- embedded_match && model_match && all(is.finite(residual))
   corr <- NA_real_; rank <- NA_integer_; condition_number <- NA_real_; zero <- character()
   rank_base <- NA_integer_; rank_augmented <- NA_integer_; rank_gain <- NA_integer_
@@ -94,15 +101,12 @@ audit_composite_index <- function(index_terms, embedded_terms,
     corr <- suppressWarnings(cor(iv, ev, use = "complete.obs"))
   }
   approximate <- !exact && is.finite(corr) && abs(corr) >= approximate_correlation
-  # v31 classification. The symbolic decomposition says whether C = E + R can be
-  # written at all; the numerical rank gain says whether R adds a dimension. The
-  # numeric check is a verification of the symbolic claim, never its proof.
+  # Classification is exact at the declared-coefficient layer. Observed rank
+  # remains a numerical diagnostic and can be discordant with that layer.
   if (!exact) {
     status <- if (approximate) "approximate_collinearity" else "not_decomposable"
   } else {
-    # v35: classification is symbolic. Observed rank is a separate numerical
-    # diagnostic and can never turn a non-zero symbolic residual into zero.
-    status <- if (all(abs(residual) <= tol)) "rank_preserving_exact" else "rank_adding_exact"
+    status <- if (all(residual == 0)) "rank_preserving_exact" else "rank_adding_exact"
   }
   warnings <- character()
   if (!embedded_match) warnings <- c(warnings, "embedded terms or coefficients do not match the index representation")
@@ -111,7 +115,7 @@ audit_composite_index <- function(index_terms, embedded_terms,
   if (length(zero)) warnings <- c(warnings, paste0("zero-variance columns excluded from condition number: ", paste(zero, collapse = ", ")))
   list(status = status, exact_reparameterization = exact,
        decomposable = exact, approximate_collinearity = approximate,
-       index_terms = b, embedded_terms = e, residual_terms = residual[abs(residual) > tol],
+       index_terms = b, embedded_terms = e, residual_terms = residual[residual != 0],
        model_terms = model_terms, tolerance = tol,
        empirical_index_embedded_correlation = corr, approximate_correlation_threshold = approximate_correlation,
        diagnostics = list(rank = rank, rank_base = rank_base, rank_augmented = rank_augmented,

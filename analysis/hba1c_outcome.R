@@ -135,7 +135,9 @@ eval_candidate <- function(p, l, p_des, l_des, base_terms) {
        max_abs_lp_difference = max(abs(lp1 - lp0)))
 }
 
-glucose_indices <- c("TyG", "TyG_WHtR", "TyG_BMI", "TyG_WC", "METS_IR", "HOMA_IR", "GLM7")
+# TyG_hsCRP contains TyG and therefore glucose information. This membership is
+# fixed from the registered formulas, independently of the clinical outcome.
+glucose_indices <- c("TyG", "TyG_WHtR", "TyG_BMI", "TyG_WC", "METS_IR", "HOMA_IR", "GLM7", "TyG_hsCRP")
 rows <- vector("list", nrow(primary_registry))
 for (i in seq_len(nrow(primary_registry))) {
   index <- primary_registry$index[i]
@@ -169,17 +171,17 @@ bh <- function(p) {
   ranked <- rev(cummin(rev(ranked))); out[ok][o] <- pmin(ranked, 1); out
 }
 arm$bh_q_24 <- bh(arm$wald_p_t15)
-arm$bh_q_non_glucose_17 <- NA_real_
+arm$bh_q_non_glucose_16 <- NA_real_
 ng <- !arm$glucose_component
-arm$bh_q_non_glucose_17[ng] <- bh(arm$wald_p_t15[ng])
-arm$family_m_24 <- nrow(arm); arm$family_m_non_glucose_17 <- sum(ng)
+arm$bh_q_non_glucose_16[ng] <- bh(arm$wald_p_t15[ng])
+arm$family_m_24 <- nrow(arm); arm$family_m_non_glucose_16 <- sum(ng)
 stopifnot(length(unique(arm$P_n)) == 1L, length(unique(arm$L_n)) == 1L,
-          nrow(arm) == 24L, sum(ng) == 17L, all(!arm$hba1c_outcome_component),
+          nrow(arm) == 24L, sum(ng) == 16L, all(!arm$hba1c_outcome_component),
           all(arm$status == "estimated"), all(arm$valid >= 0.9 * BREP),
           all(is.finite(arm$L_delta_auc)), all(is.finite(arm$bh_q_24)),
           all(is.finite(arm$P_apparent_auc_base)), all(is.finite(arm$L_auc_base)),
           all(arm$bh_q_24 >= arm$wald_p_t15 - 1e-12),
-          all(arm$bh_q_non_glucose_17[ng] >= arm$wald_p_t15[ng] - 1e-12),
+          all(arm$bh_q_non_glucose_16[ng] >= arm$wald_p_t15[ng] - 1e-12),
           all(abs(arm$L_auc_aug - arm$L_auc_base - arm$L_delta_auc) < 1e-12))
 arm <- arm[order(arm$wald_p_t15), , drop = FALSE]
 write.csv(arm, file.path(OUT, "hba1c_armB.csv"), row.names = FALSE)
@@ -187,12 +189,12 @@ write.csv(arm, file.path(OUT, "hba1c_armB.csv"), row.names = FALSE)
 summary <- data.frame(
   metric = c("P_n", "L_n", "P_cases", "L_cases", "P_apparent_base_AUC",
              "L_base_AUC", "positive_delta_n", "negative_delta_n", "zero_delta_n",
-             "q24_lt_0.05_n", "q17_lt_0.05_n", "minimum_valid_replicates"),
+             "q24_lt_0.05_n", "q16_lt_0.05_n", "minimum_valid_replicates"),
   value = c(domain$n[domain$period == "P"], domain$n[domain$period == "L"],
             domain$cases[domain$period == "P"], domain$cases[domain$period == "L"],
             arm$P_apparent_auc_base[1], arm$L_auc_base[1],
             sum(arm$L_delta_auc > 0), sum(arm$L_delta_auc < 0), sum(arm$L_delta_auc == 0),
-            sum(arm$bh_q_24 < 0.05), sum(arm$bh_q_non_glucose_17 < 0.05, na.rm = TRUE), min(arm$valid)),
+            sum(arm$bh_q_24 < 0.05), sum(arm$bh_q_non_glucose_16 < 0.05, na.rm = TRUE), min(arm$valid)),
   stringsAsFactors = FALSE)
 stopifnot(length(unique(arm$P_apparent_auc_base)) == 1L,
           length(unique(arm$L_auc_base)) == 1L)
@@ -202,4 +204,4 @@ saveRDS(list(domain = domain, arm = arm, summary = summary,
              evaluation = "P apparent AUC and L transported AUC are separately labelled; inference uses L delta AUC",
              replicates = BREP, seed = SEED), file.path(OUT, "hba1c_results.rds"))
 print(summary)
-cat("\nHBA1C_ASSERTIONS_PASSED: 24 indices, shared domains, 1000 paired Rao-Wu replicates; outcome is not an index component.\n")
+cat("\nHBA1C_RUN_COMPLETE: 24 indices, 8 containing glucose and 16 not containing glucose; shared domains and paired Rao-Wu replicates.\n")

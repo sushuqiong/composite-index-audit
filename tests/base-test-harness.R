@@ -47,6 +47,19 @@ expect_length <- function(object, n, ...) {
   .cia_pass()
 }
 
+expect_identical <- function(object, expected, ...) {
+  if (!identical(object, expected)) .cia_fail("objects are not identical")
+  .cia_pass()
+}
+
+expect_match <- function(object, regexp, ..., fixed = FALSE) {
+  if (length(object) != 1L || is.na(object) ||
+      !grepl(regexp, object, ..., fixed = fixed)) {
+    .cia_fail(paste0("text did not match '", regexp, "'"))
+  }
+  .cia_pass()
+}
+
 expect_equal <- function(object, expected, ..., tolerance = 1e-8) {
   comparison <- all.equal(object, expected, tolerance = tolerance, check.attributes = TRUE)
   if (!isTRUE(comparison)) .cia_fail(paste(comparison, collapse = "; "))

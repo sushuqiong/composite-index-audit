@@ -1,3 +1,13 @@
+# CompositeIndexAudit 0.39.0
+
+## Specification and reporting decisions
+
+* `verify_index_column()` now reports supplied-column certification separately from the declared symbolic class and fit state. A discordant column returns `input_certification = 'withheld'` and `verification_status = 'input_column_mismatch'`; it does not erase a valid symbolic decomposition or imply a failed fit.
+* Added boundary tests for composite base expressions, no-intercept models, categorical encodings, pre-existing interactions, centering, unit mismatch and coefficient mismatch. Certification applies to explicitly declared terms rather than arbitrary implicit column-space identities.
+* The ADEMP driver reports symbolic-class, input-certification, input-mismatch, structural-alias and failure-state rates separately. Its target coefficient and coverage denominator are explicit; no zero target is assigned to an aliased or discordant full-rank composite coefficient.
+* Added the covariance-referenced CVAI decomposition, common-domain alias/QR checks and survey-weighted threshold/net-benefit sensitivity outputs. Unit conversion and intercept mapping are reported separately from discrimination.
+* Submission metadata are aligned to version 0.39.0 and R 4.5.3. The earlier DOI 10.5281/zenodo.24217746 identifies only version 0.36.0. A new DOI must not be inferred before a public release is archived.
+
 # CompositeIndexAudit 0.36.0
 
 ## Decision integrity and strict examples

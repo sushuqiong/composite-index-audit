@@ -1,7 +1,7 @@
 Package: CompositeIndexAudit
 Title: Pre-Fitting Algebraic Classification of Composite Indices Entered
     Alongside Their Own Components
-Version: 0.36.0
+Version: 0.39.0
 Authors@R: person("Shuqiong", "Su", role = c("aut", "cre"),
     email = "sushuqiong@sr.gxmu.edu.cn")
 Description: Composite indices are routinely entered into a regression

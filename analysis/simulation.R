@@ -109,15 +109,16 @@ one_rep <- function(cell) {
   truth_cc <- if (cell$discordant) NA_real_ else 0
   truth_cr <- cell$s     # the residual direction's coefficient
 
-  # audit of the composite actually being fitted
+  # The symbolic audit concerns the declared expression; input certification
+  # separately checks the stored C actually supplied to the fitted model.
   a <- tryCatch(
     audit_index_in_model(c(v1 = 1, v2 = 1), c(v1 = 1, v2 = 1),
                          data = d[, c("v1", "v2")]),
     error = function(e) list(classification = "error",
                              failure_states = conditionMessage(e)))
-  # Exercise the public verification interface, not a hand-written proxy.
   column_check <- verify_index_column(d, "C", expression = "v1 + v2", tol = 1e-8)
-  failure_fired <- !column_check$ok
+  input_mismatch <- identical(column_check$verification_status, "input_column_mismatch")
+  failure_fired <- input_mismatch || length(a$failure_states) > 0L
 
   aliased <- !("C" %in% names(coef(f_cc))) || is.na(coef(f_cc)[["C"]])
   lp_id <- if (aliased)
@@ -140,13 +141,15 @@ one_rep <- function(cell) {
     lp_identity = if (is.na(lp_id)) NA_real_ else lp_id,
     audit_rank_preserving = as.numeric(
       identical(a$classification, "rank_preserving_exact")),
+    input_certified = as.numeric(identical(column_check$input_certification, "certified")),
+    input_column_mismatch = as.numeric(input_mismatch),
     failure_fired = as.numeric(failure_fired)
   )
 }
 
 run_cell <- function(cell) {
   reps <- if (cell$block == "iid") REP_IID else REP_STRESS
-  m <- t(vapply(seq_len(reps), function(i) one_rep(cell), numeric(12)))
+  m <- t(vapply(seq_len(reps), function(i) one_rep(cell), numeric(14)))
   list(cell = cell, m = m, reps = reps)
 }
 
@@ -203,6 +206,9 @@ for (cell in cells) {
     rows[[length(rows) + 1L]] <<- data.frame(
       cell = cell$name, block = cell$block, n = cell$n, s = cell$s,
       repetitions = reps, model = model,
+      target_coefficient = if (rep_tgt) (if (est_col == "est_cc") "C" else "r") else NA_character_,
+      target_truth = if (rep_tgt) truth else NA_real_,
+      coverage_denominator = if (rep_tgt) sum(ok) else NA_integer_,
       auc = auc[["mean"]], auc_mcse = auc[["mcse"]],
       dauc_vs_component = da[["mean"]], dauc_mcse = da[["mcse"]],
       bias = if (rep_tgt && any(ok)) mean(est[ok]) - truth else NA_real_,
@@ -220,12 +226,16 @@ for (cell in cells) {
        truth = if (cell$discordant) NA_real_ else 0)
   emit("comp+residual", "auc_comp_residual", "est_cr", "se_cr",
        truth = cell$s)
-  # cell-level verification rates, stored on every row of the cell
+  # Cell-level checks are repeated on all four model rows; "aliased" refers
+  # specifically to C in comp+composite, not to each row's fitted model.
   idx <- (length(rows) - 3L):length(rows)
   for (i in idx) {
-    rows[[i]]$audit_rank_preserving_rate <-
-      ifelse(cell$discordant, NA_real_, mean(m[, "audit_rank_preserving"]))
+    rows[[i]]$audit_rank_preserving_rate <- mean(m[, "audit_rank_preserving"])
+    rows[[i]]$input_certification_rate <- mean(m[, "input_certified"])
+    rows[[i]]$input_column_mismatch_rate <- mean(m[, "input_column_mismatch"])
     rows[[i]]$failure_state_rate <- mean(m[, "failure_fired"])
+    rows[[i]]$failure_state_definition <- if (cell$discordant)
+      "input_column_mismatch (pre-fitting input certification withheld; fits completed)" else "none"
     rows[[i]]$aliased_rate <- mean(m[, "aliased"])
     rows[[i]]$max_lp_identity <-
       if (all(is.na(m[, "lp_identity"]))) NA_real_
@@ -236,7 +246,46 @@ for (cell in cells) {
 }
 
 sim <- do.call(rbind, rows)
-write.csv(sim, file.path(OUT, "v36_simulation_cells.csv"), row.names = FALSE)
+write.csv(sim, file.path(OUT, "v39_simulation_cells.csv"), row.names = FALSE)
+
+# Explicit estimands and coverage denominators for the two augmented models.
+dgp <- data.frame(
+  item = c("components", "residual direction", "composite", "outcome",
+           "components-plus-composite", "components-plus-residual",
+           "consistent-processing C target", "discordant-processing C target",
+           "residual target", "coverage denominator"),
+  definition = c("w1 and w2, independent N(0,1)",
+    "r, independent N(0,1); r is not C-w1-w2",
+    "C=w1+w2 under concordant preprocessing",
+    "logit P(Y=1)=b0+0.5*w1+0.5*w2+s*r",
+    "Y ~ w1 + w2 + C; target is coefficient on C",
+    "Y ~ w1 + w2 + r; target is coefficient on r",
+    "zero, but aliased and therefore inestimable; bias/coverage are NA",
+    "no zero target; bias/coverage are NA",
+    "s", "number of replicates with finite target estimate and standard error"),
+  stringsAsFactors = FALSE)
+write.csv(dgp, file.path(OUT, "v39_simulation_dgp_and_estimands.csv"), row.names = FALSE)
+
+# One complete real output illustrates the three layers without releasing
+# participant-level records: symbolic class, input certification and fit state.
+set.seed(3901L)
+n <- 1000L
+w1 <- rnorm(n); w2 <- rnorm(n); r <- rnorm(n)
+y <- rbinom(n, 1L, plogis(qlogis_p(.2)+.5*w1+.5*w2+.8*r))
+example <- data.frame(y=y, v1=w1, v2=w2, C=w1+w2+.03*r+rnorm(n, sd=.5), r=r)
+a <- audit_index_in_model(c(v1=1,v2=1), c(v1=1,v2=1), data=example[,c("v1","v2")])
+v <- verify_index_column(example, "C", expression="v1 + v2", tol=1e-8)
+f <- glm(y ~ v1 + v2 + C, data=example, family=binomial())
+example_out <- data.frame(
+  symbolic_classification=a$classification,
+  input_certification=v$input_certification,
+  verification_status=v$verification_status,
+  failure_state=paste(v$failure_states, collapse=";"),
+  fit_status=if (inherits(f, "glm")) "fitted" else "fit_failed",
+  max_abs_column_error=v$max_abs_error,
+  C_coefficient=unname(coef(f)[["C"]]), C_aliased=is.na(coef(f)[["C"]]),
+  stringsAsFactors=FALSE)
+write.csv(example_out, file.path(OUT, "v39_discordant_complete_output_example.csv"), row.names=FALSE)
 
 # ---------------- verification assertions ----------------------------------
 disc <- sim[sim$cell == "stress_discordant_preprocessing", ]
@@ -246,7 +295,8 @@ cr   <- sim[sim$model == "comp+residual", ]
 cc8  <- iid[iid$model == "comp+composite", ]
 stopifnot(
   nrow(sim) == 48L,                                     # 12 cells x 4 models
-  all(iid$audit_rank_preserving_rate == 1),             # class right every rep
+  all(sim$audit_rank_preserving_rate == 1),             # symbolic class right every rep
+  all(iid$input_certification_rate == 1),
   all(iid$failure_state_rate == 0),                     # no false alarms
   all(iid$aliased_rate == 1),                           # C dropped every rep
   all(iid$max_lp_identity < 1e-8),                      # identical predictions
@@ -254,14 +304,21 @@ stopifnot(
   all(abs(cr$bias[cr$block == "iid"]) < 0.05),          # surviving fit clean
   all(cr$coverage[cr$block == "iid"] > 0.90),
   all(me$aliased_rate == 1),                   # shared error stays aliased
-  all(disc$failure_state_rate == 1),                    # audit fires every rep
+  all(disc$audit_rank_preserving_rate == 1),            # symbolic class unchanged
+  all(disc$input_certification_rate == 0),              # input certificate withheld
+  all(disc$input_column_mismatch_rate == 1),
+  all(disc$failure_state_rate == 1),                    # mismatch fires every rep
   all(disc$aliased_rate == 0),                          # full-rank bad column
   all(is.na(disc$bias[disc$model == "comp+composite"])), # no false zero target
   all(is.na(disc$coverage[disc$model == "comp+composite"])),
   abs(disc$bias[disc$model == "comp+residual"]) < 0.02, # surviving fit clean
-  disc$coverage[disc$model == "comp+residual"] > 0.93
+  disc$coverage[disc$model == "comp+residual"] > 0.93,
+  identical(example_out$symbolic_classification, "rank_preserving_exact"),
+  identical(example_out$input_certification, "withheld"),
+  identical(example_out$verification_status, "input_column_mismatch"),
+  identical(example_out$fit_status, "fitted")
 )
 cat("\nSIMULATION ASSERTIONS PASSED: 12 cells,",
-    8 * REP_IID + 4 * REP_STRESS, "repetitions; verification and stress",
-    "behave as registered.\n")
-cat("=== v36 simulation done ===\n")
+    8 * REP_IID + 4 * REP_STRESS, "repetitions; symbolic classification,",
+    "input certification and fit state remain distinct.\n")
+cat("=== v39 simulation done ===\n")

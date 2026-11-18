@@ -17,7 +17,11 @@ registered.}
 \item{tol}{Maximum acceptable absolute error.}
 }
 \value{
-A list with \code{max_abs_error}, \code{ok} and \code{tolerance}.
+A list with \code{max_abs_error}, \code{ok}, \code{tolerance},
+\code{input_certification}, \code{verification_status} and
+\code{failure_states}. Certification is withheld when the stored column
+does not reproduce the registered expression; this is distinct from the
+symbolic algebraic class and from model-fitting failure.
 }
 \description{
 Catches unit, scale and transcription mistakes: the stored column is

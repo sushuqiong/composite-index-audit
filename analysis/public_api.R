@@ -321,7 +321,11 @@ audit_registered_index <- function(name, model_terms, data = NULL, tol = 1e-10,
 #' @param expression Optional expression, used when \code{name} is not
 #'   registered.
 #' @param tol Maximum acceptable absolute error.
-#' @return A list with \code{max_abs_error}, \code{ok} and \code{tolerance}.
+#' @return A list with \code{max_abs_error}, \code{ok}, \code{tolerance},
+#'   \code{input_certification}, \code{verification_status} and
+#'   \code{failure_states}. Certification is withheld when the stored column
+#'   does not reproduce the registered expression; this is distinct from the
+#'   symbolic algebraic class and from model-fitting failure.
 #' @export
 #' @examples
 #' d <- data.frame(tg = c(1.2, 2.3), glu = c(4.5, 5.1))
@@ -348,8 +352,12 @@ verify_index_column <- function(data, name, expression = NULL, tol = 1e-8) {
     rebuilt <- rebuilt + parsed$products[[ik]] * data[[parts[1]]] * data[[parts[2]]]
   }
   err <- suppressWarnings(max(abs(data[[name]] - rebuilt), na.rm = TRUE))
-  list(index = name, max_abs_error = err, ok = is.finite(err) && err <= tol,
-       tolerance = tol, expression = parsed$expression)
+  ok <- is.finite(err) && err <= tol
+  list(index = name, max_abs_error = err, ok = ok,
+       tolerance = tol, expression = parsed$expression,
+       input_certification = if (ok) "certified" else "withheld",
+       verification_status = if (ok) "concordant" else "input_column_mismatch",
+       failure_states = if (ok) character(0) else "input_column_mismatch")
 }
 
 # ---------------------------------------------------------------------------

@@ -3,12 +3,12 @@
 library(CompositeIndexAudit)
 source("base-test-harness.R", local = FALSE)
 test_files <- sort(list.files("testthat", pattern = "^test.*[.]R$", full.names = TRUE))
-stopifnot(length(test_files) == 6L)
+stopifnot(length(test_files) == 9L)
 for (file in test_files) {
   sys.source(file, envir = globalenv())
 }
 cat(sprintf("BASE_TEST_SUMMARY: blocks=%d PASS=%d FAIL=%d\n",
             .cia_harness$blocks, .cia_harness$pass, .cia_harness$fail))
-stopifnot(.cia_harness$blocks == 30L,
-          .cia_harness$pass == 329L,
+stopifnot(.cia_harness$blocks == 45L,
+          .cia_harness$pass == 433L,
           .cia_harness$fail == 0L)

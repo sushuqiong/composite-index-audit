@@ -93,9 +93,9 @@ audit_fit_family <- function(fit) {
   list(family = fam$family %||% "unknown", link = fam$link %||% "unknown")
 }
 
-# Offsets are a genuine confound: if a component of the index enters the
-# model as an offset, the index no longer enters a free direction even when
-# the column is absent from the design matrix.
+# Offsets are recorded separately from free-coefficient design columns.
+# Their presence alone neither embeds a declared index component nor proves
+# redundancy: the fixed coefficient and term identity must be stated explicitly.
 audit_fit_offset <- function(fit, design) {
   tt <- design$terms
   off <- if (!is.null(tt)) attr(tt, "offset") else NULL
@@ -109,11 +109,14 @@ audit_fit_offset <- function(fit, design) {
   if (!length(names_off) && !present)
     return(list(has_offset = FALSE, offset_terms = character(),
                 offset_confound = FALSE, note = "no offset in this fit"))
-  list(has_offset = TRUE, offset_terms = names_off, offset_confound = TRUE,
+  list(has_offset = TRUE, offset_terms = names_off, offset_confound = FALSE,
+       offset_review_required = TRUE,
+       fixed_coefficient = 1,
        note = paste0("offset present",
          if (length(names_off)) paste0(" (", paste(names_off, collapse = ", "), ")") else "",
-         ": the audit reads the design matrix only; an offset is held fixed and",
-         " can absorb a component direction"))
+         ": a fixed offset is separate from free-coefficient design columns;",
+         " presence alone does not prove redundancy; matching a component requires",
+         " an explicit term identity and account of the fixed coefficient"))
 }
 
 # Weights do not enter the algebra, but the caller should know which weights
@@ -338,7 +341,7 @@ audit_fit <- function(fit, index, expression = NULL, data = NULL,
   res$state_type <- audit_state_type(res$classification)
   res$is_classification <- identical(res$state_type, "class")
   res$failure_states <- unique(c(res$failure_states %||% character(),
-    if (isTRUE(off$offset_confound)) "offset_present" else character(),
+    if (isTRUE(off$has_offset)) "offset_present" else character(),
     if (length(design$aliased_columns)) "aliased_columns_present" else character()))
   res$entry_point <- paste(
     "audit_fit(): base model terms, aliasing, family, offset and weights were",
