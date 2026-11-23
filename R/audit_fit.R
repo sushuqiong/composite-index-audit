@@ -1,5 +1,11 @@
 # audit_fit.R (PURE ASCII)
 #
+# v0.40.0: strict calls require an explicitly declared common base.  A strict
+# call without model_terms returns not_certified with failure state
+# missing_base_declaration instead of inferring the base from the fitted
+# design terms; exploratory calls may still infer it and are tagged
+# base_source = 'inferred'.
+#
 # v34: the entry point a real user reaches for.
 #
 # Until v33 the only way in was audit_registered_index(name, model_terms),
@@ -238,14 +244,20 @@ audit_symbolic_for_base <- function(index, base_terms, data = NULL, tol = 1e-10)
 #'   default: the model frame carries only the model columns, so it can never
 #'   verify an index whose components lie outside the base.
 #' @param model_terms Optional override, a character vector of design-matrix
-#'   columns or a NAMED vector mapping column to five-field term key.
+#'   columns or a NAMED vector mapping column to five-field term key.  From
+#'   v0.40.0 a strict call requires this argument explicitly; without it the
+#'   audit returns \code{not_certified} with failure state
+#'   \code{missing_base_declaration} rather than inferring a base.
 #' @param tol Numerical tolerance.
 #' @param units Optional named character vector of component units for expression-based certification.
-#' @param strict Logical; if TRUE (default), incomplete metadata return not_certified.
+#' @param strict Logical; if TRUE (default), incomplete metadata return
+#'   not_certified and a missing \code{model_terms} is itself refused.
 #' @param drop_index Drop the index itself from the base model terms.
 #' @param keep_aliased Keep aliased columns among the base model terms.
 #' @return The audit list, with an added \code{model_object} holding what was
-#'   read off the fit, plus \code{state_type} and \code{is_classification}.
+#'   read off the fit (including \code{base_source}: \code{"declared"},
+#'   \code{"inferred"} or \code{"missing"}), plus \code{state_type} and
+#'   \code{is_classification}.
 #' @export
 #' @examples
 #' d <- data.frame(sex = factor(c("M", "F", "M", "F")),
@@ -291,8 +303,42 @@ audit_fit <- function(fit, index, expression = NULL, data = NULL,
   cn <- cn[!is.na(cn)]
   if (!length(cn)) cn <- unique(cols[keep])   # terms unavailable: fall back
 
+  # v0.40.0: strict mode requires an explicitly declared common base.  Inferring
+  # the base from the fitted design terms is retained only for exploratory calls,
+  # and every result now records where its base came from (base_source).
+  base_source <- "declared"
   if (is.null(model_terms)) {
+    if (isTRUE(strict)) {
+      res <- .cia_not_certified(
+        paste("strict = TRUE requires an explicitly declared common model_terms",
+              "vector; no base model was inferred (missing_base_declaration).",
+              "Supply model_terms, or call audit_fit(..., strict = FALSE) for an",
+              "exploratory classification whose base_source is 'inferred' and",
+              "which is never reported as certified"), tol = tol)
+      res$model_object <- list(
+        model_class = paste(cls, collapse = "/"),
+        family = fam$family, link = fam$link,
+        n_obs = nrow(design$model_matrix),
+        index_is_in_fit = index %in% colnames(design$model_matrix),
+        index_coefficient = if (index %in% colnames(design$model_matrix) &&
+                                !is.null(design$coefficients))
+          unname(design$coefficients[[index]]) else NA_real_,
+        design_matrix_columns = colnames(design$model_matrix),
+        aliased_columns = design$aliased_columns,
+        base_model_terms = cn,
+        design_matrix_terms = unique(lab[!is.na(lab)]),
+        base_source = "missing",
+        weights = wts, offset = off)
+      res$state_type <- audit_state_type(res$classification)
+      res$is_classification <- FALSE
+      res$failure_states <- unique(c(res$failure_states, "missing_base_declaration"))
+      res$entry_point <- paste(
+        "audit_fit(): strict mode withheld certification because no common base",
+        "model was declared by the caller")
+      return(res)
+    }
     model_terms <- cn
+    base_source <- "inferred"
   } else if (is.null(names(model_terms))) {
     names(model_terms) <- rep("", length(model_terms))
   }
@@ -332,6 +378,7 @@ audit_fit <- function(fit, index, expression = NULL, data = NULL,
       else intersect(design$aliased_columns, colnames(design$model_matrix)),
     base_model_terms = cn,
     design_matrix_terms = unique(lab[!is.na(lab)]),
+    base_source = base_source,
     term_matching = if (keyed) "keyed: five-field identity supplied by the caller"
       else paste("legacy_bare_names: design-matrix column names only;",
                  "transformation, log base, units and encoding are undeclared",

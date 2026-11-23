@@ -9,6 +9,6 @@ for (file in test_files) {
 }
 cat(sprintf("BASE_TEST_SUMMARY: blocks=%d PASS=%d FAIL=%d\n",
             .cia_harness$blocks, .cia_harness$pass, .cia_harness$fail))
-stopifnot(.cia_harness$blocks == 45L,
-          .cia_harness$pass == 433L,
+stopifnot(.cia_harness$blocks == 49L,
+          .cia_harness$pass == 447L,
           .cia_harness$fail == 0L)

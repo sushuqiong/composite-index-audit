@@ -1,6 +1,6 @@
 # composite-index-audit
 
-R package **CompositeIndexAudit** (version 0.39.0): pre-fitting
+R package **CompositeIndexAudit** (version 0.40.0): pre-fitting
 algebraic classification of composite indices entered alongside their own
 components in a regression model.
 
@@ -59,7 +59,11 @@ requires a named vector of five-field term keys and declared units. Incomplete
 metadata return `not_certified`; `strict = FALSE` is reserved for explicitly
 exploratory legacy comparisons.
 
-Version 0.39.0 separates the declared symbolic class, certification of the supplied
+Version 0.40.0 requires an explicitly declared common base in a strict
+call: a strict `audit_fit()` without `model_terms` returns `not_certified`
+with failure state `missing_base_declaration`, and every result records
+`base_source` (`declared`, `inferred` or `missing`). It also separates the
+declared symbolic class, certification of the supplied
 column, observed sample rank and numerical fit state. `verify_index_column()`
 returns `input_certification`, `verification_status` and `failure_states`; a
 mismatched supplied column therefore need not change the declared class or prevent
@@ -69,9 +73,12 @@ coefficient mismatch. The analysis drivers also provide a common-domain alias/QR
 comparison, a covariance-referenced CVAI decomposition and survey-weighted
 threshold/net-benefit sensitivity analyses.
 
-The earlier DOI 10.5281/zenodo.24217746 applies only to archived version 0.36.0.
-Do not assign it to the 0.39.0 source or results. Validation claims for this
-submission are limited to the logs produced from the final 0.39.0 source archive.
+Version 0.39.0 is publicly archived at DOI 10.5281/zenodo.24330271; the DOI
+10.5281/zenodo.24217746 applies only to archived version 0.36.0. Do not assign
+either DOI to the 0.40.0 source, which is supplied with this submission: its own
+archive DOI is created only when the 0.40.0 release is publicly archived and is
+not inferred here. Validation claims are limited to the logs produced from the
+final 0.40.0 source archive (build log, 49 test blocks and 447 expectations).
 
 ## Layout
 

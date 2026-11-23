@@ -56,3 +56,51 @@ test_that("a fitted-model audit agrees with the registry audit", {
   a <- suppressWarnings(audit_fit(f, "TyG", strict = FALSE))
   expect_equal(a$classification, unname(ref[["TyG"]]))
 })
+
+# ---- v0.40.0 interface contract -------------------------------------------
+
+test_that("v0.40.0: a strict call without a declared base is refused", {
+  f <- glm(dx ~ sex + log_age + log_bmi, data = d, family = binomial())
+  a <- audit_fit(f, "TyG")                       # strict defaults to TRUE
+  expect_equal(a$classification, "not_certified")
+  expect_equal(a$state_type, "non_classification_state")
+  expect_equal(a$model_object$base_source, "missing")
+  expect_true("missing_base_declaration" %in% a$failure_states)
+  expect_false(isTRUE(a$is_classification))
+  expect_match(a$blocking_reason, "missing_base_declaration")
+})
+
+test_that("v0.40.0: an exploratory call tags an inferred base", {
+  f <- glm(dx ~ sex + log_age + log_bmi, data = d, family = binomial())
+  a <- suppressWarnings(audit_fit(f, "TyG", strict = FALSE))
+  expect_equal(a$model_object$base_source, "inferred")
+  expect_false(is.na(a$classification))
+})
+
+test_that("v0.40.0: a declared common base is invariant to formula order", {
+  d$S <- d$log_tg_mg + d$log_glucose_mg
+  keys <- c(log_tg_mg = "log_tg_mg|identity|-|mg|-",
+            log_glucose_mg = "log_glucose_mg|identity|-|mg|-",
+            sex = "sex|identity|-|-|factor(Male,Female)")
+  u <- c(log_tg_mg = "mg", log_glucose_mg = "mg")
+  f1 <- glm(dx ~ sex + log_tg_mg + log_glucose_mg, data = d, family = binomial())
+  f2 <- glm(dx ~ log_glucose_mg + sex + log_tg_mg, data = d, family = binomial())
+  a1 <- audit_fit(f1, "S", expression = "log_tg_mg + log_glucose_mg",
+                  units = u, model_terms = keys)
+  a2 <- audit_fit(f2, "S", expression = "log_tg_mg + log_glucose_mg",
+                  units = u, model_terms = keys)
+  expect_equal(a1$classification, "rank_preserving_exact")
+  expect_equal(a1$classification, a2$classification)
+  expect_equal(a1$model_object$base_source, "declared")
+})
+
+test_that("v0.40.0: a tampered supplied column keeps the class and withholds certification", {
+  dd <- data.frame(x = 1:6, y = c(2, 4, 6, 8, 10, 12))
+  dd$C <- dd$x + dd$y
+  ok <- verify_index_column(dd, "C", expression = "x + y")
+  dd$C[[3]] <- dd$C[[3]] + 0.5
+  bad <- verify_index_column(dd, "C", expression = "x + y")
+  expect_equal(ok$input_certification, "certified")
+  expect_equal(bad$input_certification, "withheld")
+  expect_equal(bad$verification_status, "input_column_mismatch")
+})

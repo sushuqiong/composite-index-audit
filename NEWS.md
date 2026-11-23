@@ -1,3 +1,13 @@
+# CompositeIndexAudit 0.40.0
+
+## Interface contract: a declared base is now required for certification
+
+* `audit_fit(x, index, strict = TRUE)` without an explicit `model_terms` vector now returns `classification = "not_certified"`, `state_type = "non_classification_state"`, `base_source = "missing"` and failure state `missing_base_declaration`. The base is no longer inferred from the fitted design terms in a strict call, so the default behaviour can no longer contradict the reproducible-classification claim of the manuscript.
+* Exploratory calls (`strict = FALSE`) may still infer the base, but the result is tagged `model_object$base_source = "inferred"` and is never reported as certified.
+* Every result now records `model_object$base_source` (`"declared"`, `"inferred"` or `"missing"`), so a reader can tell from the returned object alone whether a common base was declared.
+* Three acceptance tests were added: a strict call without a declared base is refused; declaring one common base and exchanging formula order returns the same class and the same supplied-column certification; tampering with one supplied column keeps the symbolic class and withholds column certification.
+* Version 0.39.0 remains publicly archived at DOI 10.5281/zenodo.24330271. The 0.40.0 source is supplied with the submission; its own archive DOI is assigned only when the release is publicly archived and is not inferred here.
+
 # CompositeIndexAudit 0.39.0
 
 ## Specification and reporting decisions
